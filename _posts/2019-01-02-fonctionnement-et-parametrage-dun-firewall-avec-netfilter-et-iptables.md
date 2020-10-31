@@ -2,8 +2,8 @@
 title: "Fonctionnement et paramétrage d'un firewall avec Netfilter et IPTABLES"
 author: Benoit
 date: 2018-08-05 19:32:33 +0100
-categories: sysadmin, linux
-tags: firewall securite
+categories: [sysadmin, linux]
+tags: [firewall,securite]
 math: true
 image: /images/firewall.svg
 ---

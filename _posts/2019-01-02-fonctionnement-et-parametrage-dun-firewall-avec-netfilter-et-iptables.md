@@ -464,5 +464,4 @@ esac
 {% endhighlight %}
 
  [1]: https://fr.wikipedia.org/wiki/Protocole_sans_état
- [2]: https://benoitgrisot.fr/wp-content/uploads/2018/07/regles-netfilter.svg
- [3]: #pointDeFiltrage
+

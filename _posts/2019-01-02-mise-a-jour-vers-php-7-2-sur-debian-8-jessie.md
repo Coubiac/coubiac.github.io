@@ -11,7 +11,6 @@ tags:
 categories:
     - developpement
     - it
-permalink: /mise-a-jour-vers-php-7-2-sur-debian-8-jessie
 ---
 Avec l'arrivée de Symfony 4.1, PHP 7.2 est obligatoire. Si votre serveur est encore avec DEBIAN 8 Jessie, voici comment mettre à jour PHP vers la version 7.2:
 

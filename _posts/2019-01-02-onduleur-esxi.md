@@ -12,7 +12,6 @@ tags:
     - Vmware
 categories:
     - it
-permalink: /onduleur-esxi
 ---
 Nous utilisons ici une machine DEBIAN 8 fraichement installée (un petit CPU et 256Mo de RAM suffisent)
 

@@ -5,7 +5,7 @@ date: 2020-10-30 19:32:33 +0100
 categories: [sysadmin, linux]
 tags: [securite]
 math: true
-image: /assets/img/sample/devices-mockup.png
+image: /images/security.jpg
 ---
 `su -` invoque un shell de connexion après avoir changé d'utilisateur. Un shell de connexion réinitialise la plupart des variables d'environnement, fournissant une base propre.
 

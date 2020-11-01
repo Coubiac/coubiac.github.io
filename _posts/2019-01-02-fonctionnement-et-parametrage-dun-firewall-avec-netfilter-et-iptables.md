@@ -333,7 +333,7 @@ $IPTABLES -A INPUT -i $LAN -j ACCEPT
 $IPTABLES -A INPUT -p tcp -m tcp --dport 80 -j ACCEPT
 $IPTABLES -A INPUT -p tcp -m tcp --dport 443 -j ACCEPT
 
-#Tout ce qui ne MATCH pas avec les règles précédente &gt; ON jette !
+#Tout ce qui ne MATCH pas avec les règles précédente > ON jette !
 $IPTABLES -P INPUT DROP
 
 #-------------------- FORWARD -------------------
@@ -396,7 +396,7 @@ $IPTABLES -A INPUT -i $WAN -p icmp -j ACCEPT
 #Mais on aurait aussi pu n'autoriser que certains services.
 $IPTABLES -A INPUT -i $LAN -j ACCEPT
 
-#Tout ce qui ne MATCH pas avec les règles précédente &gt; ON jette !
+#Tout ce qui ne MATCH pas avec les règles précédente > ON jette !
 $IPTABLES -P INPUT DROP
 
 
@@ -425,7 +425,7 @@ $IPTABLES -A FORWARD -i $LAN -j ACCEPT
 $IPTABLES -A FORWARD -i $WAN -p tcp --dport 80 -d 192.168.1.100 -j ACCEPT 
 
 
-#Tout ce qui ne MATCH pas avec les règles précédente &gt; ON jette !
+#Tout ce qui ne MATCH pas avec les règles précédente > ON jette !
 $IPTABLES -P FORWARD DROP
 
 

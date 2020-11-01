@@ -74,6 +74,8 @@ $ ls -l /tmp/shadow_copy
 
 Il ne vous reste plus qu'a tenter de les déchiffrer... et pour ça, je vous laisse lire cet article de l'excellent [korben][korben]
 
+Sources: [StackOverflow][StackOverflow]
+
 
 [Korben]: https://korben.info/comment-cracker-un-mot-de-passe-sous-linux.html
-
+[StackOverflow]: https://stackoverflow.com

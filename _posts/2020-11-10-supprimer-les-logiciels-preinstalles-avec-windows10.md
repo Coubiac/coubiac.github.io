@@ -1,7 +1,7 @@
 ---
-title: "Supprimer les logiciales pré-installés avec Windows 10"
+title: "Supprimer les logiciels pré-installés avec Windows 10"
 author: Benoit
-date: 2020-11-01 13:45:30 +0100
+date: 2020-11-11 13:45:30 +0100
 categories: [it]
 tags: [it, windows]
 math: true

@@ -3,7 +3,7 @@ title: "Supprimer les logiciels pré-installés avec Windows 10"
 author: Benoit
 date: 2020-11-11 13:45:30 +0100
 categories: [it]
-tags: [it, windows]
+tags: [it, Windows]
 math: true
 ---
 Quand on installe windows 10 pour la première fois, celui-ci installe tout un tas d'applications dont nous n'avons la plupart du temps pas besoin, surtout dans le cas d'une utilisation professionnelle.

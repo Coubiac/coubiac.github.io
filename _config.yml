@@ -9,7 +9,7 @@
 #--------------------------
 
 title: Coubiac                          # the main title
-lang: fr
+
 
 tagline: Je s'appelle root !  # it will display as the sub-title
 
@@ -49,6 +49,7 @@ google_site_verification: google_meta_tag_verification # change to your verifica
 # change below value to '/projectname'.
 baseurl: ''
 
+lang: fr_FR
 # Change to your timezone › http://www.timezoneconverter.com/cgi-bin/findzone/findzone
 timezone: Europe/Paris
 

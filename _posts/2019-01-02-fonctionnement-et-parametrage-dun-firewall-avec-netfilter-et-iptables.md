@@ -465,3 +465,10 @@ esac
 
  [1]: https://fr.wikipedia.org/wiki/Protocole_sans_état
 
+
+ Sources scripts: [NetSH][Netsh]
+ Bibliographie: ENI Service
+
+
+[Netsh]: https://www.netsh.be/routeur-linux-iptables/
+

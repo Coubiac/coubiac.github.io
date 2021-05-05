@@ -113,6 +113,8 @@ Nous allons maintenant créer une règles pour empecher les membres du groupe "G
 
 ![Création d'une règle](/images/applocker/26.png)
 
+Nous appliquons cette règle au groupe "G_RESTRICTIONS_LOGICIELS"
+
 ![Création d'une règle](/images/applocker/27.png)
 
 ![Création d'une règle](/images/applocker/28.png)
@@ -120,6 +122,17 @@ Nous allons maintenant créer une règles pour empecher les membres du groupe "G
 ![Création d'une règle](/images/applocker/29.png)
 
 ![Création d'une règle](/images/applocker/30.png)
+
+Nous allons maintenant créer les Exceptions. Il faut cliquer sur ajouter et insérer ces deux exceptions:
+
+```
+%PROGRAMFILES%/*
+```
+et 
+
+```
+%WINDIR%/*
+```
 
 ![Création d'une règle](/images/applocker/31.png)
 
@@ -131,6 +144,8 @@ Il faut maintenant répéter la même procédure pour:
 - Règles de Script
 
 Concernant les règles d'application empaquetées, il faut générer les règles par défaut: 
+
+__ATTENTION, Si vous ne générez pas de règles par défaut ici, votre menu démarrer risque de cesser de fonctionner__
 
 ![Création d'une règle](/images/applocker/33.png)
 

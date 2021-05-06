@@ -149,7 +149,7 @@ __ATTENTION, Si vous ne générez pas de règles par défaut ici, votre menu dé
 
 ![Création d'une règle](/images/applocker/33.png)
 
-## Vidéo de démonstration
+# Vidéo de démonstration
 
 [![Mise en place d'APPlocker](https://img.youtube.com/vi/6rS4WepDloA/0.jpg)](https://www.youtube.com/watch?v=6rS4WepDloA "Mise en place d'APPlocker")
 

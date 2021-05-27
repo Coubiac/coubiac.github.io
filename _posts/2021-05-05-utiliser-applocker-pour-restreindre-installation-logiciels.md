@@ -10,6 +10,8 @@ image: /images/applocker/data-security.jpg
 
 # Qu'est ce qu'Applocker ?
 
+> ***Attention ! Applocker est uniquement compatible avec les éditions "Entreprise" et "Education" de Windows 10. A ce jour, Windows 10 Pro n'est pas pris en charge !***
+
 Applocker est une fonctionnalité qui a fait son apparition avec Windows 7 entreprise et Windows Server 2008R2. il s'agit d'une évolution des "stratégies de restriction logicielles"  (ou SRP) qui avaient à l'époque été introduits avec Windows Server 2000 et Windows XP. 
 
 Selon Microsoft:

@@ -53,7 +53,7 @@ Il faudra bien évidement lier la GPO à l'OU sur laquelle vous voulez l'appliqu
 
 ## Activation du Service "Infomations d'Application"
 
-Pour qu'Applocker puisse fonctionne, il faut que le service "Informations d'Application soit démarré sur les PC Windows 10. Par défaut, ce service est désactivé. Il faut donc l'activer.
+Pour qu'Applocker puisse fonctionne, il faut que le service "Identité de l'application" soit démarré sur les PC Windows 10. Par défaut, ce service est désactivé. Il faut donc l'activer.
 
 Nous pouvons bien entendu intégrer ceci dans notre GPO:
 

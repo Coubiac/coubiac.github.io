@@ -20,5 +20,4 @@ tags:
 ---
 ```
 
-Les exemples publiés doivent rester génériques : aucun nom réel, domaine interne, adresse IP, identifiant, jeton, résultat métier ou capture provenant d'un environnement d'entreprise.
 

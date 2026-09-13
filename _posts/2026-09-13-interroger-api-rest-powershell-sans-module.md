@@ -25,7 +25,7 @@ $Headers = @{
 }
 ```
 
-Évite d'écrire un vrai jeton directement dans un script conservé dans Git. Ici, la valeur entre chevrons est seulement un emplacement à remplacer au moment de l'exécution.
+Il faut éviter d'écrire un vrai jeton directement dans un script conservé dans Git.
 
 ## Envoyer une requête GET
 
@@ -59,7 +59,7 @@ $Response | ConvertTo-Json -Depth 10
 
 ## Appeler une ressource précise
 
-Si l'API fournit un identifiant ou une URI pour chaque objet, réutilise cette valeur au lieu de reconstruire l'adresse à la main :
+Si l'API fournit un identifiant ou une URI pour chaque objet, il est préférable de réutiliser cette valeur au lieu de reconstruire l'adresse à la main :
 
 ```powershell
 foreach ($Resource in $Response.members) {
@@ -113,7 +113,7 @@ catch {
 }
 ```
 
-Selon la version de PowerShell et le type d'erreur, `Response` peut être absent. Pour un script destiné à plusieurs environnements, vérifie son existence avant de lire le code HTTP.
+Selon la version de PowerShell et le type d'erreur, `Response` peut être absent. Pour un script destiné à plusieurs environnements, il faut vérifier son existence avant de lire le code HTTP.
 
 ## Les points à vérifier avant d'aller plus loin
 

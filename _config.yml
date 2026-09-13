@@ -1,0 +1,15 @@
+title: Coubiac
+description: Tutoriels pratiques sur l'administration système, PowerShell, Exchange, Linux et les infrastructures IT.
+lang: fr
+url: https://coubiac.github.io
+baseurl: ""
+author: Coubiac
+timezone: Europe/Paris
+permalink: /articles/:title/
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+exclude:
+  - README.md
+

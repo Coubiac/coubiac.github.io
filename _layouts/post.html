@@ -1,0 +1,30 @@
+---
+layout: default
+---
+<article class="post">
+  <header class="post-header">
+    <p class="eyebrow">Tutoriel</p>
+    <h1>{{ page.title }}</h1>
+    {% if page.description %}<p class="lead">{{ page.description }}</p>{% endif %}
+    <div class="post-meta">
+      <time datetime="{{ page.date | date_to_xmlschema }}">{{ page.date | date: "%d/%m/%Y" }}</time>
+      {% if page.tags %}
+        <span aria-hidden="true">•</span>
+        <span>{{ page.tags | join: " · " }}</span>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="notice">
+    Les noms, adresses, identifiants et résultats utilisés ici sont fictifs ou anonymisés. Teste les commandes dans un environnement de lab avant de les utiliser ailleurs.
+  </div>
+
+  <div class="post-body">
+    {{ content }}
+  </div>
+
+  <footer class="post-footer">
+    <a href="{{ '/' | relative_url }}">← Retour aux articles</a>
+  </footer>
+</article>
+

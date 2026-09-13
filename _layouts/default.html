@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="{{ site.lang | default: 'fr' }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="{{ page.description | default: site.description | escape }}">
+    <meta name="color-scheme" content="light dark">
+    <meta property="og:site_name" content="{{ site.title | escape }}">
+    <meta property="og:title" content="{{ page.title | default: site.title | escape }}">
+    <meta property="og:description" content="{{ page.description | default: site.description | escape }}">
+    <meta property="og:type" content="{% if page.layout == 'post' %}article{% else %}website{% endif %}">
+    <meta property="og:url" content="{{ page.url | absolute_url }}">
+    <title>{% if page.title %}{{ page.title }} - {% endif %}{{ site.title }}</title>
+    <link rel="canonical" href="{{ page.url | absolute_url }}">
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+  </head>
+  <body>
+    <a class="skip-link" href="#contenu">Aller au contenu</a>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="{{ '/' | relative_url }}" aria-label="Accueil de Coubiac">
+          <span class="brand-mark" aria-hidden="true">C:</span>
+          <span>Coubiac</span>
+        </a>
+        <nav aria-label="Navigation principale">
+          <a href="{{ '/' | relative_url }}">Articles</a>
+          <a href="{{ '/a-propos/' | relative_url }}">À propos</a>
+          <a href="https://github.com/Coubiac">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="contenu" class="container page-content">
+      {{ content }}
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <span>Coubiac</span>
+        <span>Des exemples génériques, à adapter et à tester.</span>
+      </div>
+    </footer>
+  </body>
+</html>
+

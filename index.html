@@ -1,0 +1,35 @@
+---
+layout: default
+title: Tutoriels pratiques
+description: Des tutoriels directs et réutilisables sur l'administration système, PowerShell, Exchange, Linux et les infrastructures IT.
+---
+<section class="hero">
+  <p class="eyebrow">Administration système</p>
+  <h1>Des tutoriels techniques, sans le blabla.</h1>
+  <p class="lead">PowerShell, Exchange, Linux, API et infrastructures IT. Des procédures génériques, des commandes expliquées et des exemples que tu peux adapter.</p>
+</section>
+
+<section aria-labelledby="derniers-articles">
+  <div class="section-heading">
+    <h2 id="derniers-articles">Derniers articles</h2>
+  </div>
+
+  <div class="post-list">
+    {% for post in site.posts %}
+      <article class="post-card">
+        <div>
+          <p class="post-card-meta">
+            <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%d/%m/%Y" }}</time>
+            {% if post.tags %}<span> · {{ post.tags | join: " · " }}</span>{% endif %}
+          </p>
+          <h3><a href="{{ post.url | relative_url }}">{{ post.title }}</a></h3>
+          {% if post.description %}<p>{{ post.description }}</p>{% endif %}
+        </div>
+        <a class="read-more" href="{{ post.url | relative_url }}" aria-label="Lire {{ post.title | escape }}">Lire le tutoriel →</a>
+      </article>
+    {% else %}
+      <p>Aucun article pour le moment.</p>
+    {% endfor %}
+  </div>
+</section>
+

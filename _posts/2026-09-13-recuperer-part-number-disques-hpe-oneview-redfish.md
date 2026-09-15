@@ -15,6 +15,8 @@ Il peut cependant manquer une information utile pour réaliser un inventaire mat
 
 L'information peut être disponible directement dans l'iLO via l'API Redfish. Il est alors possible d'utiliser OneView pour obtenir une session SSO vers l'iLO, puis d'interroger Redfish en PowerShell, sans installer de module HPE.
 
+Les exemples ci-dessous sont compatibles avec Windows PowerShell 5.1. Ils tiennent également compte d'un cas fréquent : OneView possède un certificat signé par une PKI de confiance, alors que les interfaces iLO utilisent encore des certificats autosignés.
+
 ## Principe
 
 Le chemin utilisé est le suivant :
@@ -43,7 +45,13 @@ Aucun module PowerShell HPE n'est nécessaire. Les appels sont réalisés avec `
 
 ## Connexion à l'API OneView
 
-On commence par récupérer la version courante de l'API :
+Avec Windows PowerShell 5.1, il est utile de forcer l'utilisation de TLS 1.2 avant les appels HTTPS :
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+```
+
+On commence ensuite par récupérer la version courante de l'API :
 
 ```powershell
 $OneView = 'https://oneview.example.net'
@@ -52,9 +60,12 @@ $ApiVersion = (
     Invoke-RestMethod `
         -Method Get `
         -Uri "$OneView/rest/version" `
-        -SkipCertificateCheck
+        -UseBasicParsing `
+        -ErrorAction Stop
 ).currentVersion
 ```
+
+Dans cet exemple, le certificat présenté par OneView est signé par une autorité de certification approuvée par le poste. Il n'est donc pas nécessaire de désactiver sa validation.
 
 Puis on ouvre une session :
 
@@ -74,7 +85,8 @@ $Session = Invoke-RestMethod `
     } `
     -ContentType 'application/json' `
     -Body $LoginBody `
-    -SkipCertificateCheck
+    -UseBasicParsing `
+    -ErrorAction Stop
 
 $OneViewHeaders = @{
     'X-API-Version' = $ApiVersion
@@ -100,7 +112,8 @@ function Invoke-OneViewGet {
         -Method Get `
         -Uri $Uri `
         -Headers $OneViewHeaders `
-        -SkipCertificateCheck
+        -UseBasicParsing `
+        -ErrorAction Stop
 }
 ```
 
@@ -223,9 +236,17 @@ Le `sessionkey` peut ensuite être présenté à l'iLO dans l'en-tête HTTP `X-A
 
 Cela évite de conserver un compte et un mot de passe iLO dans le script. Le poste qui exécute le script doit en revanche pouvoir joindre directement les interfaces iLO en HTTPS.
 
-## Interroger Redfish
+## Interroger Redfish avec des certificats iLO autosignés
 
-Une deuxième fonction simplifie les requêtes vers l'iLO :
+Windows PowerShell 5.1 ne possède pas le paramètre `-SkipCertificateCheck` disponible dans les versions modernes de PowerShell.
+
+Si les iLO utilisent encore des certificats autosignés, un appel direct avec `Invoke-RestMethod` peut donc échouer avec un message de ce type :
+
+```text
+Could not establish trust relationship for the SSL/TLS secure channel
+```
+
+Dans ce cas, la validation du certificat peut être désactivée uniquement pendant l'appel Redfish, puis restaurée immédiatement après.
 
 ```powershell
 function Invoke-RedfishGet {
@@ -244,16 +265,38 @@ function Invoke-RedfishGet {
         $Uri = "$BaseUri$Uri"
     }
 
-    Invoke-RestMethod `
-        -Method Get `
-        -Uri $Uri `
-        -Headers @{
-            'X-Auth-Token' = $Token
-            'Accept'       = 'application/json'
-        } `
-        -SkipCertificateCheck
+    $OldCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+
+    try {
+        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = {
+            $true
+        }
+
+        Invoke-RestMethod `
+            -Method Get `
+            -Uri $Uri `
+            -Headers @{
+                'X-Auth-Token' = $Token
+                'Accept'       = 'application/json'
+            } `
+            -UseBasicParsing `
+            -ErrorAction Stop
+    }
+    finally {
+        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $OldCallback
+    }
 }
 ```
+
+Le `finally` est important : la validation TLS normale est restaurée même si l'appel vers l'iLO échoue.
+
+Cette méthode désactive toutefois toute validation du certificat pendant la durée de l'appel concerné. Elle convient comme solution transitoire dans un script séquentiel lorsque les interfaces iLO utilisent des certificats autosignés, mais elle ne doit pas être considérée comme l'état cible.
+
+La solution propre à terme consiste à déployer sur les iLO des certificats signés par une PKI approuvée par les postes d'administration. La fonction peut alors être simplifiée et le contournement supprimé.
+
+Il faut également éviter d'utiliser cette technique telle quelle dans un traitement parallèle : `ServerCertificateValidationCallback` est une propriété statique du processus .NET et n'est donc pas limitée à une seule requête concurrente.
+
+## Récupérer les disques physiques
 
 Il ne faut pas partir du principe que le serveur Redfish est obligatoirement accessible sous :
 
@@ -262,8 +305,6 @@ Il ne faut pas partir du principe que le serveur Redfish est obligatoirement acc
 ```
 
 Il est préférable de commencer par la collection `Systems` et de suivre les URI retournées par Redfish.
-
-## Récupérer les disques physiques
 
 La fonction suivante parcourt les systèmes, les sous-systèmes de stockage puis les disques :
 
@@ -422,18 +463,6 @@ La ressource `Drive` possède bien une propriété `PartNumber`.
 
 Il faut donc tenir compte de la génération du serveur, de l'iLO, du contrôleur de stockage et de son firmware. La présence de `/Storage` ne garantit pas nécessairement que tous les contrôleurs et tous les disques d'une ancienne plateforme seront représentés de la même manière.
 
-## À propos de `-SkipCertificateCheck`
-
-Les exemples utilisent :
-
-```powershell
--SkipCertificateCheck
-```
-
-Cette option est disponible avec PowerShell 7.
-
-Elle est pratique dans un environnement où OneView et les iLO utilisent des certificats non approuvés par la machine qui exécute le script. Lorsque les certificats sont signés par une autorité reconnue par le poste, cette option peut être retirée.
-
 ## En résumé
 
 L'API OneView reste pratique pour obtenir la liste des serveurs et accéder à leurs contrôleurs de management, mais elle ne fournit pas nécessairement tout l'inventaire matériel disponible dans l'iLO.
@@ -451,6 +480,8 @@ OneView
   -> Drives
   -> PartNumber
 ```
+
+Avec Windows PowerShell 5.1, il faut également tenir compte de la gestion des certificats. Si OneView possède un certificat approuvé mais que les iLO utilisent encore des certificats autosignés, la validation peut être contournée uniquement pendant les appels Redfish puis immédiatement restaurée.
 
 Cette méthode fonctionne avec plusieurs serveurs : l'inventaire OneView est récupéré une seule fois, puis chaque serveur est interrogé successivement. Le résultat peut ensuite être utilisé directement en PowerShell ou exporté en CSV pour constituer un inventaire matériel.
 

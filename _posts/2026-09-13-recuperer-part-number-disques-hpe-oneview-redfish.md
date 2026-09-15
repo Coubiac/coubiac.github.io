@@ -246,7 +246,44 @@ Si les iLO utilisent encore des certificats autosignés, un appel direct avec `I
 Could not establish trust relationship for the SSL/TLS secure channel
 ```
 
-Dans ce cas, la validation du certificat peut être désactivée uniquement pendant l'appel Redfish, puis restaurée immédiatement après.
+Une solution souvent utilisée consiste à affecter directement un bloc PowerShell à `ServerCertificateValidationCallback` :
+
+```powershell
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {
+    $true
+}
+```
+
+Cette méthode peut cependant échouer avec Windows PowerShell 5.1. Le callback peut être exécuté par .NET sur un thread ne disposant pas de runspace PowerShell. L'erreur réellement remontée par `Invoke-RestMethod` est alors peu explicite :
+
+```text
+The underlying connection was closed: An unexpected error occurred on a send
+```
+
+Pour éviter l'exécution d'un scriptblock PowerShell dans le callback, il est possible de compiler une petite classe .NET qui implémente `ICertificatePolicy`. La classe doit être déclarée une seule fois, avant la fonction `Invoke-RedfishGet` :
+
+```powershell
+if (-not ('IloTrustAllCertsPolicy' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+
+public class IloTrustAllCertsPolicy : ICertificatePolicy
+{
+    public bool CheckValidationResult(
+        ServicePoint servicePoint,
+        X509Certificate certificate,
+        WebRequest request,
+        int certificateProblem)
+    {
+        return true;
+    }
+}
+'@
+}
+```
+
+La politique est ensuite activée uniquement pendant l'appel Redfish, puis la politique précédente est restaurée :
 
 ```powershell
 function Invoke-RedfishGet {
@@ -265,12 +302,11 @@ function Invoke-RedfishGet {
         $Uri = "$BaseUri$Uri"
     }
 
-    $OldCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+    $OldCertificatePolicy = [System.Net.ServicePointManager]::CertificatePolicy
 
     try {
-        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = {
-            $true
-        }
+        [System.Net.ServicePointManager]::CertificatePolicy =
+            New-Object -TypeName IloTrustAllCertsPolicy
 
         Invoke-RestMethod `
             -Method Get `
@@ -283,18 +319,19 @@ function Invoke-RedfishGet {
             -ErrorAction Stop
     }
     finally {
-        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $OldCallback
+        [System.Net.ServicePointManager]::CertificatePolicy =
+            $OldCertificatePolicy
     }
 }
 ```
 
-Le `finally` est important : la validation TLS normale est restaurée même si l'appel vers l'iLO échoue.
+Le `finally` est important : la politique précédente est restaurée même si l'appel vers l'iLO échoue.
 
-Cette méthode désactive toutefois toute validation du certificat pendant la durée de l'appel concerné. Elle convient comme solution transitoire dans un script séquentiel lorsque les interfaces iLO utilisent des certificats autosignés, mais elle ne doit pas être considérée comme l'état cible.
+`ICertificatePolicy` et la propriété `CertificatePolicy` sont obsolètes dans .NET. Leur utilisation se justifie ici uniquement par la contrainte de Windows PowerShell 5.1 et par l'échec du callback écrit sous forme de scriptblock. Cette méthode désactive toute validation du certificat dans le processus pendant la durée de l'appel concerné. Elle convient comme solution transitoire dans un script séquentiel lorsque les interfaces iLO utilisent des certificats autosignés, mais elle ne doit pas être considérée comme l'état cible.
 
 La solution propre à terme consiste à déployer sur les iLO des certificats signés par une PKI approuvée par les postes d'administration. La fonction peut alors être simplifiée et le contournement supprimé.
 
-Il faut également éviter d'utiliser cette technique telle quelle dans un traitement parallèle : `ServerCertificateValidationCallback` est une propriété statique du processus .NET et n'est donc pas limitée à une seule requête concurrente.
+Il faut éviter d'utiliser cette technique dans un traitement parallèle : `CertificatePolicy` est une propriété statique du processus .NET et n'est donc pas limitée à une seule requête concurrente.
 
 ## Récupérer les disques physiques
 
@@ -481,7 +518,7 @@ OneView
   -> PartNumber
 ```
 
-Avec Windows PowerShell 5.1, il faut également tenir compte de la gestion des certificats. Si OneView possède un certificat approuvé mais que les iLO utilisent encore des certificats autosignés, la validation peut être contournée uniquement pendant les appels Redfish puis immédiatement restaurée.
+Avec Windows PowerShell 5.1, il faut également tenir compte de la gestion des certificats. Si OneView possède un certificat approuvé mais que les iLO utilisent encore des certificats autosignés, une politique de certificat temporaire peut être appliquée pendant les appels Redfish puis immédiatement restaurée. Le callback PowerShell direct est à éviter, car il peut provoquer une erreur de runspace masquée par le message `An unexpected error occurred on a send`.
 
 Cette méthode fonctionne avec plusieurs serveurs : l'inventaire OneView est récupéré une seule fois, puis chaque serveur est interrogé successivement. Le résultat peut ensuite être utilisé directement en PowerShell ou exporté en CSV pour constituer un inventaire matériel.
 
@@ -490,3 +527,5 @@ Cette méthode fonctionne avec plusieurs serveurs : l'inventaire OneView est ré
 - Documentation HPE OneView SDK : [Server Hardware](https://hewlettpackard.github.io/oneview-python/hpeOneView.resources.servers.html)
 - Documentation HPE iLO 5 Redfish : [Storage resource definitions](https://servermanagementportal.ext.hpe.com/docs/redfishservices/ilos/ilo5/ilo5_304/ilo5_storage_resourcedefns304)
 - Documentation HPE Redfish : [Storage data models](https://servermanagementportal.ext.hpe.com/docs/redfishservices/ilos/supplementdocuments/storage)
+- Documentation Microsoft .NET Framework : [ICertificatePolicy](https://learn.microsoft.com/dotnet/api/system.net.icertificatepolicy?view=netframework-4.8.1)
+- Documentation Microsoft .NET Framework : [ServicePointManager.CertificatePolicy](https://learn.microsoft.com/dotnet/api/system.net.servicepointmanager.certificatepolicy?view=netframework-4.8.1)

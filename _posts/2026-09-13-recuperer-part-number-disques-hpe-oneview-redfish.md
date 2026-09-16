@@ -1,7 +1,7 @@
 ---
 layout: post
-title: Récupérer le Part Number des disques HPE avec PowerShell, OneView et Redfish
-description: Utiliser l'API HPE OneView puis Redfish pour inventorier les disques physiques et récupérer leur Part Number sans module PowerShell HPE.
+title: Inventorier les disques HPE avec PowerShell, OneView et Redfish
+description: Utiliser l'API HPE OneView puis Redfish pour récupérer le modèle, la révision du firmware et les heures de fonctionnement des disques physiques.
 tags:
   - PowerShell
   - HPE OneView
@@ -11,9 +11,9 @@ tags:
 
 Lorsqu'un parc de serveurs HPE est géré par OneView, l'API permet de récupérer une grande partie de l'inventaire matériel. Pour le stockage local, l'endpoint `localStorageV2` fournit notamment les contrôleurs, les disques et les volumes.
 
-Il peut cependant manquer une information utile pour réaliser un inventaire matériel précis : le `PartNumber` des disques physiques.
+Certaines informations détaillées ne sont cependant pas toujours présentes dans cet inventaire. C'est notamment le cas du modèle exact, de la révision du firmware, du `PartNumber` ou du nombre d'heures de fonctionnement du disque.
 
-L'information peut être disponible directement dans l'iLO via l'API Redfish. Il est alors possible d'utiliser OneView pour obtenir une session SSO vers l'iLO, puis d'interroger Redfish en PowerShell, sans installer de module HPE.
+Ces informations peuvent être disponibles directement dans l'iLO via l'API Redfish. Il est alors possible d'utiliser OneView pour obtenir une session SSO vers l'iLO, puis d'interroger Redfish en PowerShell, sans installer de module HPE.
 
 Les exemples ci-dessous sont compatibles avec Windows PowerShell 5.1. Ils tiennent également compte d'un cas fréquent : OneView possède un certificat signé par une PKI de confiance, alors que les interfaces iLO utilisent encore des certificats autosignés.
 
@@ -36,7 +36,9 @@ PowerShell
                             +-- Storage
                             +-- Drives
                                     |
-                                    +-- PartNumber
+                                    +-- Model
+                                    +-- Revision
+                                    +-- PowerOnHours
 ```
 
 OneView reste donc le point d'entrée. Il permet de retrouver les serveurs et de créer la session iLO. L'inventaire détaillé des disques est ensuite lu directement depuis Redfish.
@@ -184,7 +186,7 @@ $LocalStorage |
 
 Suivant la génération du serveur, du contrôleur et les versions de firmware, différentes informations peuvent apparaître.
 
-Le problème est que le `PartNumber` du disque n'est pas systématiquement présent dans cet inventaire.
+Le problème est que les propriétés nécessaires à un inventaire détaillé ne sont pas systématiquement présentes dans la réponse de OneView.
 
 C'est dans ce cas que Redfish devient intéressant.
 
@@ -396,23 +398,37 @@ function Get-HpeDriveInventory {
                     -Uri $DriveRef.'@odata.id' `
                     -Token $IloSession.Token
 
+                $PowerOnHours = $null
+
+                if ($Drive.Oem -and $Drive.Oem.Hpe) {
+                    $PowerOnHours = $Drive.Oem.Hpe.PowerOnHours
+                }
+
                 [PSCustomObject]@{
-                    Server       = $Server.name
-                    ILO          = $IloSession.Address
-                    Storage      = $Storage.Name
-                    DriveId      = $Drive.Id
-                    Location     = $Drive.PhysicalLocation.PartLocation.ServiceLabel
-                    Manufacturer = $Drive.Manufacturer
-                    Model        = $Drive.Model
-                    PartNumber   = $Drive.PartNumber
-                    SerialNumber = $Drive.SerialNumber
-                    MediaType    = $Drive.MediaType
-                    Protocol     = $Drive.Protocol
-                    CapacityGB   = if ($Drive.CapacityBytes) {
+                    Server          = $Server.name
+                    ILO             = $IloSession.Address
+                    Storage         = $Storage.Name
+                    DriveId         = $Drive.Id
+                    Location        = $Drive.PhysicalLocation.PartLocation.ServiceLabel
+                    Manufacturer    = $Drive.Manufacturer
+                    Model           = $Drive.Model
+                    PartNumber      = $Drive.PartNumber
+                    FirmwareVersion = $Drive.Revision
+                    SerialNumber    = $Drive.SerialNumber
+                    MediaType       = $Drive.MediaType
+                    Protocol        = $Drive.Protocol
+                    CapacityGB      = if ($Drive.CapacityBytes) {
                         [math]::Round(
                             $Drive.CapacityBytes / 1GB,
                             1
                         )
+                    }
+                    else {
+                        $null
+                    }
+                    PowerOnHours    = $PowerOnHours
+                    PowerOnDays     = if ($null -ne $PowerOnHours) {
+                        [math]::Round($PowerOnHours / 24, 1)
                     }
                     else {
                         $null
@@ -424,13 +440,41 @@ function Get-HpeDriveInventory {
 }
 ```
 
-La propriété recherchée se trouve simplement dans :
+Les propriétés les plus utiles pour identifier la référence du disque et vérifier sa version de firmware sont :
 
 ```powershell
-$Drive.PartNumber
+$Drive.Model
+$Drive.Revision
 ```
 
-Le modèle Redfish standard `Drive` prévoit notamment les propriétés `Manufacturer`, `Model`, `PartNumber`, `SerialNumber`, `CapacityBytes`, `MediaType`, `Protocol` et `FirmwareVersion`.
+La ressource Redfish standard `Drive` prévoit notamment les propriétés `Manufacturer`, `Model`, `PartNumber`, `Revision`, `SerialNumber`, `CapacityBytes`, `MediaType` et `Protocol`.
+
+Il faut toutefois tenir compte du fait que plusieurs de ces propriétés acceptent explicitement la valeur `null`. Un iLO peut donc exposer une ressource `Drive` complète tout en laissant `Manufacturer` ou `PartNumber` vide. Ce n'est pas nécessairement une erreur du script : la donnée peut ne pas être remontée par le disque, le contrôleur ou son firmware.
+
+Pour identifier les disques concernés par une mise à jour de firmware, `Model` fournit le numéro de modèle et `Revision` la révision actuellement installée. Le `PartNumber` peut être conservé dans l'inventaire lorsqu'il est renseigné, mais il ne faut pas en faire une condition indispensable au traitement.
+
+## Récupérer les heures de fonctionnement
+
+HPE ajoute à la ressource `Drive` une extension OEM nommée `Oem.Hpe.PowerOnHours` :
+
+```powershell
+$Drive.Oem.Hpe.PowerOnHours
+```
+
+Cette propriété contient le nombre total d'heures pendant lesquelles le disque a été alimenté. Elle est en lecture seule et disponible dans la documentation HPE depuis iLO 5 1.20.
+
+Il ne s'agit pas de l'uptime actuel du serveur. La valeur est cumulée par le disque pendant sa durée de vie. Elle peut être égale à `null` lorsque les heures de fonctionnement ne peuvent pas être déterminées ou lorsque cette information n'est pas prise en charge.
+
+Le script convertit également cette valeur en jours pour faciliter la lecture :
+
+```powershell
+PowerOnDays = if ($null -ne $PowerOnHours) {
+    [math]::Round($PowerOnHours / 24, 1)
+}
+else {
+    $null
+}
+```
 
 ## Traiter plusieurs serveurs
 
@@ -467,6 +511,15 @@ $Results |
     Format-Table -AutoSize
 ```
 
+Le résultat peut prendre cette forme :
+
+```text
+Server     Location Model          FirmwareVersion PowerOnHours PowerOnDays
+------     -------- -----          --------------- ------------ -----------
+apollo-01  Bay 1    EG001200JWJNK  HPD8                   42817      1784,0
+apollo-01  Bay 2    EG001200JWJNK  HPD8                   42106      1754,4
+```
+
 ou exporté dans un fichier CSV :
 
 ```powershell
@@ -488,7 +541,7 @@ Les anciennes implémentations HPE peuvent également exposer un modèle propri�
 
 Les disques y sont représentés par des objets `HpeSmartStorageDiskDrive`.
 
-Ce modèle fournit de nombreuses informations sur les disques, mais ne définit pas la même propriété `PartNumber` que la ressource Redfish standard `Drive`.
+Ce modèle fournit de nombreuses informations sur les disques, mais n'expose pas nécessairement les mêmes propriétés que la ressource Redfish standard `Drive`.
 
 Le modèle Redfish standard utilise une arborescence de ce type :
 
@@ -496,7 +549,7 @@ Le modèle Redfish standard utilise une arborescence de ce type :
 /redfish/v1/Systems/{id}/Storage/{id}/Drives/{id}
 ```
 
-La ressource `Drive` possède bien une propriété `PartNumber`.
+La ressource `Drive` définit notamment les propriétés `Model`, `PartNumber` et `Revision`, ainsi que plusieurs extensions OEM HPE. Leur présence dans le schéma ne garantit toutefois pas qu'une valeur sera renseignée pour chaque disque.
 
 Il faut donc tenir compte de la génération du serveur, de l'iLO, du contrôleur de stockage et de son firmware. La présence de `/Storage` ne garantit pas nécessairement que tous les contrôleurs et tous les disques d'une ancienne plateforme seront représentés de la même manière.
 
@@ -504,7 +557,7 @@ Il faut donc tenir compte de la génération du serveur, de l'iLO, du contrôleu
 
 L'API OneView reste pratique pour obtenir la liste des serveurs et accéder à leurs contrôleurs de management, mais elle ne fournit pas nécessairement tout l'inventaire matériel disponible dans l'iLO.
 
-Pour récupérer le `PartNumber` des disques, l'enchaînement est le suivant :
+Pour récupérer l'inventaire détaillé des disques, l'enchaînement est le suivant :
 
 ```text
 OneView
@@ -515,12 +568,12 @@ OneView
   -> Systems
   -> Storage
   -> Drives
-  -> PartNumber
+  -> Model, Revision, PowerOnHours
 ```
 
 Avec Windows PowerShell 5.1, il faut également tenir compte de la gestion des certificats. Si OneView possède un certificat approuvé mais que les iLO utilisent encore des certificats autosignés, une politique de certificat temporaire peut être appliquée pendant les appels Redfish puis immédiatement restaurée. Le callback PowerShell direct est à éviter, car il peut provoquer une erreur de runspace masquée par le message `An unexpected error occurred on a send`.
 
-Cette méthode fonctionne avec plusieurs serveurs : l'inventaire OneView est récupéré une seule fois, puis chaque serveur est interrogé successivement. Le résultat peut ensuite être utilisé directement en PowerShell ou exporté en CSV pour constituer un inventaire matériel.
+Cette méthode fonctionne avec plusieurs serveurs : l'inventaire OneView est récupéré une seule fois, puis chaque serveur est interrogé successivement. Le résultat fournit notamment le modèle, la révision du firmware et, lorsque le matériel le permet, les heures de fonctionnement cumulées. Les propriétés facultatives comme `Manufacturer`, `PartNumber` ou `PowerOnHours` peuvent rester vides sans que cela indique un dysfonctionnement du script.
 
 ## Références
 

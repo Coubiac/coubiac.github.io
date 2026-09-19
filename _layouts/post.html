@@ -8,23 +8,38 @@ layout: default
     {% if page.description %}<p class="lead">{{ page.description }}</p>{% endif %}
     <div class="post-meta">
       <time datetime="{{ page.date | date_to_xmlschema }}">{{ page.date | date: "%d/%m/%Y" }}</time>
-      {% if page.tags %}
-        <span aria-hidden="true">•</span>
-        <span>{{ page.tags | join: " · " }}</span>
-      {% endif %}
     </div>
+    {% if page.tags %}
+      <ul class="tag-list" aria-label="Tags de l'article">
+        {% for tag in page.tags %}
+          <li><a class="tag" href="{{ '/' | relative_url }}?tag={{ tag | url_encode }}#recherche">{{ tag }}</a></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
   </header>
 
   <div class="notice">
     Les noms, adresses, identifiants et résultats utilisés ici sont fictifs ou anonymisés. Les commandes doivent être testées dans un environnement de lab avant d'être utilisées ailleurs.
   </div>
 
-  <div class="post-body">
-    {{ content }}
+  <div class="post-content-layout">
+    <div class="post-main">
+      <div class="post-body">
+        {{ content }}
+      </div>
+
+      <footer class="post-footer">
+        <a href="{{ '/' | relative_url }}">← Retour aux articles</a>
+      </footer>
+    </div>
+
+    <aside class="post-toc js-only" data-toc hidden>
+      <details>
+        <summary>Dans cet article</summary>
+        <nav aria-label="Table des matières">
+          <ol class="toc-list" data-toc-list></ol>
+        </nav>
+      </details>
+    </aside>
   </div>
-
-  <footer class="post-footer">
-    <a href="{{ '/' | relative_url }}">← Retour aux articles</a>
-  </footer>
 </article>
-

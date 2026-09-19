@@ -10,8 +10,6 @@ tags:
   - TLS
 ---
 
-# Comprendre SMTP : les bases de la RFC 5321
-
 La RFC 5321 décrit le fonctionnement de SMTP, le protocole utilisé pour transporter les messages électroniques.
 
 Sa lecture n'est pas particulièrement accessible. Le document est conçu pour définir précisément le comportement attendu des implémentations, pas pour enseigner le protocole.

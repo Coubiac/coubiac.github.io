@@ -176,12 +176,16 @@ h3 { font-size: 1.3rem; }
   background: var(--notice-bg);
 }
 
-.post-toc { grid-area: toc; min-width: 0; }
-.post-toc details {
+.post-toc {
+  grid-area: toc;
+  align-self: start;
   position: sticky;
   top: 1.5rem;
   max-height: calc(100vh - 3rem);
+  min-width: 0;
   overflow: auto;
+}
+.post-toc details {
   padding: 1rem 0 1rem 1.1rem;
   border-left: 1px solid var(--border);
 }
@@ -233,9 +237,12 @@ pre code { padding: 0; color: inherit; background: transparent; font-size: .88re
     justify-content: center;
     gap: 1.5rem;
   }
-  .post-toc details {
+  .post-toc {
     position: static;
     max-height: none;
+    overflow: visible;
+  }
+  .post-toc details {
     padding: 1rem 1.15rem;
     border: 1px solid var(--border);
     border-radius: .75rem;

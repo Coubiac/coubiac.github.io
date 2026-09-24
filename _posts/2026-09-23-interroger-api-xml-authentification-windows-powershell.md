@@ -215,7 +215,107 @@ $servers |
     Select-Object Name, Model, Status
 ```
 
-## 6. Exporter les données vers CSV
+## 6. Filtrer directement côté API
+
+Dans les exemples précédents, l'API renvoie tous les serveurs. Le filtrage est ensuite effectué localement avec PowerShell :
+
+```powershell
+$servers | Where-Object Status -ne "OK"
+```
+
+Cette méthode fonctionne même lorsque l'API ne propose aucun mécanisme de filtrage, mais elle oblige à télécharger et à traiter toute la collection.
+
+Si l'API accepte des paramètres de requête, le filtrage peut être effectué directement par le serveur.
+
+### Utiliser des paramètres de requête
+
+Une API peut par exemple accepter une URL de ce type :
+
+```text
+https://serveur/api/servers?status=Warning&model=ProLiant
+```
+
+Avec `Invoke-RestMethod`, les paramètres peuvent être transmis sous forme de table de hachage :
+
+```powershell
+$url = "https://serveur/api/servers"
+
+$query = @{
+    status = "Warning"
+    model  = "ProLiant"
+}
+
+$data = Invoke-RestMethod `
+    -Uri $url `
+    -Method Get `
+    -Body $query `
+    -UseDefaultCredentials
+```
+
+Pour une requête GET, PowerShell ajoute les éléments de la table de hachage à l'URL sous forme de paramètres de requête. Il prend également en charge l'encodage des valeurs.
+
+La syntaxe dépend entièrement de l'API. Les paramètres pourraient tout aussi bien s'appeler :
+
+```text
+?state=Warning
+?filter=Warning
+?model=DL380
+```
+
+ou utiliser d'autres opérateurs :
+
+```text
+?statusNot=OK
+?nameContains=EXCH
+```
+
+Il faut donc consulter la documentation de l'API pour connaître les noms des paramètres, les valeurs acceptées et la manière de combiner plusieurs critères.
+
+### Cas d'une API compatible OData
+
+Certaines API utilisent la convention OData et son paramètre `$filter`.
+
+Pour récupérer les serveurs dont l'état n'est pas `OK` :
+
+```powershell
+$filter = [Uri]::EscapeDataString("Status ne 'OK'")
+$url = "https://serveur/api/servers?`$filter=$filter"
+
+$data = Invoke-RestMethod `
+    -Uri $url `
+    -UseDefaultCredentials
+```
+
+L'accent grave placé devant `$filter` empêche PowerShell de l'interpréter comme une variable dans l'URL.
+
+Plusieurs conditions peuvent être combinées :
+
+```powershell
+$filter = [Uri]::EscapeDataString(
+    "Status ne 'OK' and contains(Model,'DL380')"
+)
+
+$url = "https://serveur/api/servers?`$filter=$filter"
+
+$data = Invoke-RestMethod `
+    -Uri $url `
+    -UseDefaultCredentials
+```
+
+Cette syntaxe ne fonctionne que si l'API prend réellement en charge OData.
+
+### Filtrage côté API ou côté PowerShell
+
+Le filtrage côté API présente plusieurs avantages :
+
+- moins de données transférées ;
+- moins de mémoire consommée par PowerShell ;
+- traitement plus rapide lorsque la collection est importante ;
+- possibilité pour le serveur d'utiliser ses propres index.
+
+Le filtrage avec `Where-Object` reste toutefois nécessaire lorsque l'API ne propose pas cette fonctionnalité ou lorsqu'un traitement plus complexe doit être réalisé localement.
+
+## 7. Exporter les données vers CSV
 
 Une fois les données transformées en objets PowerShell, l'export vers Excel ou vers un fichier CSV devient trivial :
 
@@ -229,7 +329,7 @@ $servers |
 
 Le fichier pourra ensuite être ouvert directement dans Excel.
 
-## 7. Utiliser Invoke-RestMethod
+## 8. Utiliser Invoke-RestMethod
 
 Pour interroger une API, `Invoke-RestMethod` peut parfois être encore plus pratique :
 
@@ -261,7 +361,7 @@ $data | Get-Member
 
 `Get-Member` est particulièrement utile lorsque l'on découvre une API et qu'on ne connaît pas encore précisément la structure des données retournées.
 
-## 8. Utiliser un autre compte Windows
+## 9. Utiliser un autre compte Windows
 
 Si l'API ne doit pas être interrogée avec l'utilisateur courant, on peut demander explicitement des identifiants :
 
@@ -289,7 +389,7 @@ $response = Invoke-WebRequest `
 
 Elle permet notamment de conserver naturellement le contexte d'authentification Windows de la session.
 
-## 9. Script complet
+## 10. Script complet
 
 Voici un exemple complet compatible avec Windows PowerShell 5.1 :
 
@@ -320,7 +420,7 @@ $servers |
 
 À partir de là, les données peuvent être filtrées, exportées, comparées avec d'autres sources ou utilisées dans des scripts d'inventaire.
 
-## 10. Attention aux namespaces XML
+## 11. Attention aux namespaces XML
 
 Certains documents XML sont un peu plus complexes et utilisent des namespaces.
 

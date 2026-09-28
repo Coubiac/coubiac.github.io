@@ -281,3 +281,8 @@ pre code { padding: 0; color: inherit; background: transparent; font-size: .88re
   .hero { background: linear-gradient(135deg, #111a2a 0%, #102542 100%); box-shadow: none; }
   code { color: #fdba74; background: #431407; }
 }
+
+/* Mermaid diagrams in articles */
+.mermaid-diagram { overflow-x: auto; margin: 1.5rem 0 2rem; padding: 1.25rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--surface); text-align: center; }
+.mermaid-diagram svg { display: block; width: 100%; max-width: 100%; height: auto; margin-inline: auto; }
+

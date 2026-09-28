@@ -8,6 +8,7 @@ tags:
   - Haute disponibilité
   - Réplication
   - Active Manager
+mermaid: true
 ---
 
 # Exchange Server : comprendre le fonctionnement d'un DAG
@@ -26,29 +27,13 @@ Une fois cette idée comprise, les notions de réplication, failover, quorum, se
 
 ## Partons d'un Exchange sans DAG
 
-Prenons un serveur Exchange `MBX01` qui héberge une base `DB01`.
-
-```text
-MBX01
-└── DB01
-    ├── DB01.edb
-    └── transaction logs
-```
+Prenons un serveur Exchange `MBX01` qui héberge une base `DB01`, son fichier `.edb` et ses journaux de transactions.
 
 Les boîtes aux lettres des utilisateurs se trouvent dans `DB01`.
 
 Si le serveur tombe complètement en panne, la base n'est plus disponible.
 
-Même problème si le stockage qui contient `DB01` devient inaccessible :
-
-```text
-MBX01
-   |
-   X
- panne
-   |
-DB01 indisponible
-```
+Même problème si le stockage qui contient `DB01` devient inaccessible.
 
 On peut bien sûr protéger le stockage avec du RAID, sauvegarder Exchange et disposer de pièces de rechange.
 
@@ -58,22 +43,12 @@ C'est précisément le problème auquel répond le DAG.
 
 ## Le principe d'un DAG
 
-Ajoutons plusieurs serveurs Exchange :
+Ajoutons trois serveurs Exchange au DAG `DAG-01`, puis plaçons une copie de `DB01` sur chacun d'eux :
 
-```text
-                 DAG-01
-
-        MBX01     MBX02     MBX03
-```
-
-Puis plaçons plusieurs copies de `DB01` sur ces serveurs :
-
-```text
-                 DAG-01
-
-        MBX01        MBX02        MBX03
-
-DB01    ACTIVE       passive      passive
+```mermaid
+flowchart LR
+    A["MBX01 · DB01 active"] -->|"journaux"| B["MBX02 · DB01 passive"]
+    A -->|"journaux"| C["MBX03 · DB01 passive"]
 ```
 
 Il s'agit bien de **trois copies de la même base de données**.
@@ -88,40 +63,13 @@ Un DAG peut contenir jusqu'à 16 serveurs Exchange Mailbox et une base peut disp
 
 C'est l'un des changements de raisonnement importants.
 
-Sans DAG, on a facilement tendance à penser :
+Sans DAG, `DB01` est liée à `MBX01`. Dans un DAG, la base est définie dans l'organisation Exchange et possède plusieurs copies.
 
-```text
-MBX01 possède DB01
-```
-
-Dans un DAG, il vaut mieux penser :
-
-```text
-DB01 appartient à l'organisation Exchange
-et possède plusieurs copies :
-
-DB01\MBX01
-DB01\MBX02
-DB01\MBX03
-```
-
-À un instant donné, une seule de ces copies est active.
-
-Par exemple :
-
-```text
-DB01\MBX01   ACTIVE
-DB01\MBX02   passive
-DB01\MBX03   passive
-```
-
-Après un basculement :
-
-```text
-DB01\MBX01   indisponible
-DB01\MBX02   ACTIVE
-DB01\MBX03   passive
-```
+| Copie | Avant la panne | Après le basculement |
+|---|---|---|
+| `DB01\MBX01` | Active | Indisponible |
+| `DB01\MBX02` | Passive | Active |
+| `DB01\MBX03` | Passive | Passive |
 
 `DB01` existe toujours.
 
@@ -139,39 +87,17 @@ Dans un DAG, ces journaux servent également à maintenir les copies passives à
 
 De façon simplifiée :
 
-```text
-                MBX01
-             DB01 ACTIVE
-
-                 |
-                 | nouveaux logs
-                 |
-          +------+------+
-          |             |
-          v             v
-
-        MBX02          MBX03
-     DB01 passive   DB01 passive
-
-          |             |
-          v             v
-
-      replay logs     replay logs
-          |             |
-          v             v
-
-        DB01            DB01
-      mise à jour     mise à jour
+```mermaid
+flowchart LR
+    A["DB01 active sur MBX01"] -->|"copie des journaux"| B["DB01 passive sur MBX02"]
+    A -->|"copie des journaux"| C["DB01 passive sur MBX03"]
+    B --> D["Rejeu dans la base"]
+    C --> E["Rejeu dans la base"]
 ```
 
 Lorsqu'une nouvelle copie est créée, Exchange réalise d'abord une copie initiale de la base, puis la réplication continue prend le relais.
 
-Deux valeurs deviennent alors particulièrement utiles pour l'administrateur :
-
-```text
-CopyQueueLength
-ReplayQueueLength
-```
+Deux valeurs deviennent alors particulièrement utiles pour l'administrateur : `CopyQueueLength` et `ReplayQueueLength`.
 
 **CopyQueueLength** représente le nombre de journaux que la copie passive doit encore recevoir.
 
@@ -188,32 +114,17 @@ Une file qui augmente durablement peut signaler un problème de réplication, de
 
 ## Que se passe-t-il lorsque MBX01 tombe en panne ?
 
-Reprenons notre exemple :
-
-```text
-        MBX01        MBX02        MBX03
-
-DB01    ACTIVE       passive      passive
-```
-
-`MBX01` tombe en panne :
-
-```text
-        MBX01        MBX02        MBX03
-
-DB01      X          passive      passive
-```
-
-Exchange doit maintenant déterminer quelle copie passive peut devenir active.
+Reprenons notre exemple : `DB01` est active sur `MBX01` et possède deux copies passives. `MBX01` tombe en panne. Exchange doit déterminer quelle copie passive peut devenir active.
 
 Ce travail est assuré par **Active Manager**, un composant du service Microsoft Exchange Replication.
 
 Après sélection d'une copie appropriée :
 
-```text
-        MBX01        MBX02        MBX03
-
-DB01      X           ACTIVE      passive
+```mermaid
+flowchart LR
+    A["MBX01 en panne"] --> B["Active Manager évalue les copies"]
+    B --> C["DB01 activée sur MBX02"]
+    B -.-> D["MBX03 reste passive"]
 ```
 
 La base est montée sur `MBX02`.
@@ -228,19 +139,7 @@ C'est **la copie active de la base qui a changé**.
 
 Deux termes proches correspondent à deux situations différentes.
 
-Un **failover** est un basculement provoqué par une panne :
-
-```text
-MBX01 tombe
-    |
-    v
-Exchange détecte la panne
-    |
-    v
-DB01 est activée ailleurs
-```
-
-Un **switchover** est volontaire.
+Un **failover** est un basculement provoqué par une panne. Un **switchover** est volontaire.
 
 Par exemple, avant une maintenance sur `MBX01`, l'administrateur peut déplacer la base :
 
@@ -248,20 +147,7 @@ Par exemple, avant une maintenance sur `MBX01`, l'administrateur peut déplacer 
 Move-ActiveMailboxDatabase DB01 -ActivateOnServer MBX02
 ```
 
-On obtient alors :
-
-```text
-Avant :
-
-MBX01   DB01 ACTIVE
-MBX02   DB01 passive
-
-
-Après :
-
-MBX01   DB01 passive
-MBX02   DB01 ACTIVE
-```
+`DB01` devient active sur `MBX02` et passive sur `MBX01`.
 
 Le même principe de mobilité de la base est utilisé, mais l'opération est cette fois planifiée.
 
@@ -269,13 +155,7 @@ Le même principe de mobilité de la base est utilisé, mais l'opération est ce
 
 Une base peut avoir plusieurs copies susceptibles d'être activées.
 
-On peut donc définir un ordre de préférence :
-
-```text
-DB01\MBX01   ActivationPreference 1
-DB01\MBX02   ActivationPreference 2
-DB01\MBX03   ActivationPreference 3
-```
+On peut donc définir un ordre de préférence : `DB01\MBX01` vaut 1, `DB01\MBX02` vaut 2 et `DB01\MBX03` vaut 3.
 
 Par exemple :
 
@@ -296,12 +176,7 @@ Lors d'un basculement, Exchange évalue d'abord l'état des copies et différent
 
 Active Manager est chargé de gérer l'état actif ou passif des copies.
 
-Dans un DAG, on rencontre deux rôles :
-
-```text
-PAM = Primary Active Manager
-SAM = Standby Active Manager
-```
+Dans un DAG, on rencontre le **PAM** (Primary Active Manager) et les **SAM** (Standby Active Manager).
 
 Le **PAM** coordonne notamment les décisions de basculement des bases au niveau du DAG.
 
@@ -309,24 +184,13 @@ Les **SAM** présents sur les autres membres surveillent l'état local et partic
 
 On peut simplifier ainsi :
 
-```text
-             panne DB01 sur MBX01
-                      |
-                      v
-             Active Manager
-                      |
-              analyse des copies
-                      |
-          +-----------+-----------+
-          |                       |
-        MBX02                   MBX03
-      DB01 Healthy            DB01 Healthy
-          |
-          v
-    sélection d'une copie
-          |
-          v
-      DB01 ACTIVE
+```mermaid
+flowchart TD
+    A["DB01 indisponible sur MBX01"] --> B["Active Manager examine les copies"]
+    B --> C["MBX02 · copie saine"]
+    B --> D["MBX03 · copie saine"]
+    C --> E["Activation d'une copie admissible"]
+    D --> E
 ```
 
 Le processus réel utilise davantage de critères, mais ce modèle suffit pour comprendre le rôle d'Active Manager.
@@ -339,22 +203,7 @@ Lorsque des serveurs sont ajoutés à un DAG, Exchange crée et configure le clu
 
 L'administrateur Exchange travaille cependant principalement avec le DAG, les bases et leurs copies.
 
-On peut représenter grossièrement l'architecture ainsi :
-
-```text
-                Exchange
-
-          DAG / Active Manager
-                  |
-                  v
-        Mailbox Database Copies
-                  |
-                  v
-     Windows Failover Clustering
-                  |
-                  v
-       Windows Server / réseau
-```
+Le cluster Windows fournit les mécanismes de membres et de quorum ; Exchange gère l'état des copies et leur activation avec le DAG et Active Manager.
 
 Il ne faut donc pas administrer un DAG comme s'il s'agissait d'un cluster applicatif Windows classique.
 
@@ -364,14 +213,7 @@ Exchange pilote lui-même une grande partie des opérations liées au cluster.
 
 Le cluster doit également éviter une situation dangereuse.
 
-Imaginons quatre serveurs répartis sur deux sites :
-
-```text
-SITE A                  SITE B
-
-MBX01                   MBX03
-MBX02                   MBX04
-```
+Imaginons quatre serveurs répartis sur deux sites : `MBX01` et `MBX02` sur le site A, `MBX03` et `MBX04` sur le site B.
 
 La liaison réseau entre les deux sites tombe.
 
@@ -397,12 +239,11 @@ Son rôle est uniquement d'aider le cluster à conserver une majorité lorsque l
 
 Un DAG à deux membres peut par exemple être représenté ainsi :
 
-```text
-MBX01 --------+
-              |
-MBX02 --------+---- quorum
-              |
-Witness ------+
+```mermaid
+flowchart TD
+    A["MBX01 · vote"] --> Q["Majorité : 2 votes sur 3"]
+    B["MBX02 · vote"] --> Q
+    W["Witness · vote"] --> Q
 ```
 
 Le witness fournit un vote supplémentaire au mécanisme de quorum.
@@ -415,15 +256,10 @@ Lorsqu'on crée pour la première fois une copie de `DB01` sur `MBX02`, il faut 
 
 Cette opération s'appelle le **seeding**.
 
-```text
-MBX01                           MBX02
-
-DB01 ACTIVE
-   |
-   | copie initiale de la base
-   |
-   v
-                              DB01 passive
+```mermaid
+flowchart LR
+    A["DB01 active sur MBX01"] -->|"seeding : copie initiale"| B["DB01 passive sur MBX02"]
+    B -->|"ensuite"| C["Réplication continue"]
 ```
 
 Cette base initiale devient ensuite le point de départ de la réplication continue.
@@ -442,58 +278,23 @@ Cette notion devient particulièrement importante lorsqu'on étudie AutoReseed.
 
 ## AutoReseed devient maintenant beaucoup plus simple à comprendre
 
-Supposons que `MBX02` possède une copie passive de `DB01` :
+Supposons que `MBX02` possède une copie passive de `DB01`. Son disque tombe en panne. La production continue grâce à la copie active sur `MBX01`, mais le DAG a perdu une copie.
 
-```text
-MBX01                    MBX02
-
-DB01 ACTIVE  ----------> DB01 passive
-                             |
-                             v
-                           disque
+```mermaid
+flowchart LR
+    A["Disque de MBX02 en panne"] --> B["Copie passive perdue"]
+    B --> C["Volume de réserve préparé"]
+    C --> D["AutoReseed reconstruit la copie"]
+    E["DB01 active sur MBX01"] -->|"source saine"| D
 ```
 
-Le disque de `MBX02` tombe en panne.
-
-La production continue grâce à `MBX01`, mais le DAG vient de perdre une copie de `DB01` :
-
-```text
-MBX01                    MBX02
-
-DB01 ACTIVE                 X
-
-Il ne reste plus qu'une copie saine.
-```
-
-Le rôle d'AutoReseed est de permettre à Exchange de reconstruire automatiquement la copie perdue sur un volume de réserve correctement préparé.
-
-On peut donc résumer :
-
-```text
-DAG
- |
- +--> maintient plusieurs copies
- |
- +--> bascule sur une copie saine en cas de panne
- |
- +--> seeding / reseeding permet de créer ou reconstruire une copie
- |
- +--> AutoReseed automatise certains reseeds après perte d'un volume
-```
+Le seeding crée une copie initiale ; le reseeding reconstruit une copie en échec. AutoReseed automatise ce dernier cas lorsque les volumes de réserve ont été préparés.
 
 C'est pour cette raison qu'il est préférable de comprendre le DAG avant d'étudier le JBOD et AutoReseed.
 
 ## Attention : un DAG n'est pas une sauvegarde
 
-La présence de plusieurs copies protège très bien contre certains incidents :
-
-```text
-panne serveur
-panne stockage
-arrêt d'un service
-maintenance
-perte d'une copie
-```
+La présence de plusieurs copies protège contre une panne de serveur ou de stockage et permet certaines opérations de maintenance.
 
 Mais les copies du DAG reçoivent les modifications de la base active.
 
@@ -501,18 +302,11 @@ Si un utilisateur supprime volontairement une donnée et que cette suppression e
 
 Même chose pour certains dégâts logiques : la réplication n'a pas vocation à décider si une modification était souhaitable.
 
-```text
-Modification sur ACTIVE
-          |
-          v
-transaction logs
-          |
-          v
-réplication
-          |
-     +----+----+
-     v         v
-  copie 2   copie 3
+```mermaid
+flowchart LR
+    A["Modification de DB01 active"] --> B["Journaux de transactions"]
+    B --> C["Copie passive sur MBX02"]
+    B --> D["Copie passive sur MBX03"]
 ```
 
 Le DAG assure donc principalement **la disponibilité des données**, pas leur conservation historique.
@@ -571,70 +365,29 @@ Ces commandes permettent notamment de vérifier :
 
 Un DAG n'impose pas obligatoirement une carte réseau dédiée à la réplication.
 
-On rencontre encore des architectures utilisant deux réseaux :
-
-```text
-MBX01
-├── Réseau client / MAPI
-└── Réseau de réplication DAG
-```
+On rencontre encore des architectures utilisant deux réseaux, l'un pour les clients et l'autre pour la réplication.
 
 Cette configuration est possible.
 
 La Preferred Architecture de Microsoft privilégie cependant une conception plus simple avec une seule interface réseau par serveur pour la connectivité et la réplication.
 
-Il ne faut donc pas retenir :
-
-```text
-DAG = obligatoirement deux cartes réseau
-```
-
-mais plutôt :
-
-```text
-DAG
- |
- +-- plusieurs serveurs Exchange Mailbox
- |
- +-- plusieurs copies des bases
- |
- +-- réplication continue
- |
- +-- Active Manager
- |
- +-- quorum
- |
- +-- éventuellement un witness
-```
-
-Le design réseau est ensuite un choix d'architecture.
+Le DAG repose sur plusieurs membres, des copies de bases, la réplication, Active Manager et le quorum. La présence d'un réseau dédié relève d'un choix d'architecture.
 
 ## Le modèle mental à retenir
 
 Toute l'architecture peut finalement être résumée par ce schéma :
 
-```text
-                       DAG
-
-        +---------------+---------------+
-        |               |               |
-      MBX01           MBX02           MBX03
-        |               |               |
-        |   réplication continue         |
-        |<------------->|<------------->|
-        |               |               |
-     DB01 ACTIVE     DB01 passive     DB01 passive
-     DB02 passive    DB02 ACTIVE      DB02 passive
-
-
-                  Active Manager
-                        |
-                sélection / bascule
-                        |
-                      quorum
-                        |
-                     Witness
-                si nécessaire
+```mermaid
+flowchart TB
+    subgraph DAG["DAG-01"]
+        A["MBX01 · DB01 active, DB02 passive"]
+        B["MBX02 · DB01 passive, DB02 active"]
+        C["MBX03 · DB01 passive, DB02 passive"]
+    end
+    A -->|"DB01 : journaux"| B
+    A -->|"DB01 : journaux"| C
+    B -->|"DB02 : journaux"| A
+    B -->|"DB02 : journaux"| C
 ```
 
 Les idées essentielles sont les suivantes :
@@ -656,22 +409,7 @@ Les idées essentielles sont les suivantes :
 
 Une fois ces notions comprises, les architectures Exchange utilisant du JBOD et AutoReseed deviennent beaucoup moins mystérieuses.
 
-Le raisonnement n'est plus :
-
-```text
-Pourquoi Exchange accepte-t-il de perdre un disque ?
-```
-
-mais :
-
-```text
-Cette copie locale de la base peut disparaître
-car d'autres copies existent dans le DAG.
-
-Il faut ensuite reconstruire la copie perdue.
-```
-
-Et c'est exactement à ce moment qu'intervient AutoReseed.
+La perte d'un disque n'entraîne pas nécessairement la perte de la base si d'autres copies saines existent dans le DAG. Il faut ensuite reconstruire la copie perdue : c'est à ce moment qu'intervient AutoReseed.
 
 ## Pour aller plus loin
 

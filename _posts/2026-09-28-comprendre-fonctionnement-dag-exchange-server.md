@@ -4,10 +4,7 @@ title: "Exchange Server : comprendre le fonctionnement d'un DAG"
 description: "Copies actives et passives, réplication, Active Manager, quorum, witness, failover, switchover et seeding : comprendre les mécanismes qui assurent la haute disponibilité des bases Exchange."
 tags:
   - Exchange Server
-  - DAG
   - Haute disponibilité
-  - Réplication
-  - Active Manager
 mermaid: true
 ---
 

@@ -45,7 +45,7 @@ a:hover { color: var(--accent); }
 
 .header-inner { min-height: 72px; }
 .brand { display: inline-flex; align-items: center; gap: .65rem; color: var(--text); font-size: 1.1rem; font-weight: 800; text-decoration: none; }
-.brand-mark { display: grid; width: 2.15rem; height: 2.15rem; place-items: center; border-radius: .6rem; color: #fff; background: var(--accent); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .9rem; }
+.brand-avatar { display: block; width: 2.15rem; height: 2.15rem; flex: 0 0 2.15rem; border: 1px solid var(--border); border-radius: 50%; object-fit: cover; }
 .site-header nav { display: flex; flex-wrap: wrap; gap: 1.25rem; }
 .site-header nav a { color: var(--muted); font-size: .95rem; font-weight: 650; text-decoration: none; }
 .site-header nav a:hover { color: var(--accent); }

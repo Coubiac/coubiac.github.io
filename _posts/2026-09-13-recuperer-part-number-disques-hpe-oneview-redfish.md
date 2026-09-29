@@ -4,9 +4,8 @@ title: Inventorier les disques HPE avec PowerShell, OneView et Redfish
 description: Utiliser l'API HPE OneView puis Redfish pour récupérer le modèle, la révision du firmware et les heures de fonctionnement des disques physiques.
 tags:
   - PowerShell
-  - HPE OneView
-  - Redfish
-  - HPE iLO
+  - API
+  - HPE
 ---
 
 Lorsqu'un parc de serveurs HPE est géré par OneView, l'API permet de récupérer une grande partie de l'inventaire matériel. Pour le stockage local, l'endpoint `localStorageV2` fournit notamment les contrôleurs, les disques et les volumes.

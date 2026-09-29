@@ -4,7 +4,7 @@ title: Interroger une API REST en PowerShell sans module
 description: Une base simple pour s'authentifier, appeler une API, filtrer le résultat et gérer les erreurs avec Invoke-RestMethod.
 tags:
   - PowerShell
-  - API REST
+  - API
 ---
 
 Il n'existe pas toujours de module PowerShell adapté à l'API que l'on veut interroger. Ce n'est pas bloquant : `Invoke-RestMethod` permet d'appeler directement la plupart des API REST.

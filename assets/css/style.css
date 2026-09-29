@@ -64,7 +64,7 @@ a:hover { color: var(--accent); }
 .eyebrow { margin: 0 0 .5rem; color: var(--accent-dark); font-size: .78rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 h1, h2, h3 { margin-top: 0; line-height: 1.2; letter-spacing: -.025em; }
 h1 { max-width: 760px; margin-bottom: 1rem; font-size: clamp(2.25rem, 6vw, 4rem); }
-h2 { margin-top: 2.75rem; font-size: clamp(1.55rem, 3vw, 2rem); }
+h2 { margin-top: 2.5rem; font-size: clamp(1.4rem, 2.2vw, 1.7rem); }
 h3 { font-size: 1.3rem; }
 .lead { max-width: 760px; margin-bottom: 0; color: var(--muted); font-size: 1.18rem; }
 .section-heading { margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); }

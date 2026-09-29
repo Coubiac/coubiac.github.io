@@ -7,8 +7,6 @@ tags:
   - Haute disponibilité
 ---
 
-# Exchange Server : comprendre le JBOD, les points de montage et AutoReseed
-
 Quand on vient de l'administration système classique, installer une base Exchange et ses journaux de transactions sur un disque sans RAID paraît assez risqué.
 
 Dans une architecture Exchange correctement dimensionnée, la logique est pourtant différente : la résilience des données n'est plus assurée principalement par le stockage local, mais par les copies de bases réparties dans un groupe de disponibilité de base de données, ou DAG.

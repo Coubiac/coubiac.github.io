@@ -8,8 +8,6 @@ tags:
 mermaid: true
 ---
 
-# Exchange Server : comprendre le fonctionnement d'un DAG
-
 Quand on découvre la haute disponibilité dans Exchange Server, le terme "DAG" apparaît très vite.
 
 DAG signifie **Database Availability Group**, ou groupe de disponibilité de bases de données.

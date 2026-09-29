@@ -4,10 +4,6 @@ title: "Comprendre SMTP : les bases de la RFC 5321"
 description: "Comprendre le fonctionnement réel de SMTP, la différence entre enveloppe et contenu, la transaction `MAIL`/`RCPT`/`DATA`, les codes de réponse, le routage DNS et les principales extensions ESMTP."
 tags:
   - SMTP
-  - RFC 5321
-  - messagerie
-  - DNS
-  - TLS
 ---
 
 La RFC 5321 décrit le fonctionnement de SMTP, le protocole utilisé pour transporter les messages électroniques.

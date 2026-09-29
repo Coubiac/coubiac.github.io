@@ -4,11 +4,7 @@ title: "Exchange Server : comprendre le JBOD, les points de montage et AutoResee
 description: "Comprendre pourquoi Exchange peut utiliser des disques sans RAID pour les bases de données, le rôle des deux arborescences de points de montage et la reconstruction automatique assurée par AutoReseed."
 tags:
   - Exchange Server
-  - DAG
-  - JBOD
-  - AutoReseed
-  - stockage
-  - haute disponibilité
+  - Haute disponibilité
 ---
 
 # Exchange Server : comprendre le JBOD, les points de montage et AutoReseed

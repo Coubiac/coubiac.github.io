@@ -1,5 +1,5 @@
 @startuml
-title HAT et RAT - Deux contrôles différents
+title HAT, Mail Flow Policy et RAT - Qui se connecte, comment le traiter, pour qui ?
 
 skinparam shadowing false
 skinparam linetype ortho
@@ -9,25 +9,32 @@ left to right direction
 rectangle "Serveur SMTP distant\n203.0.113.25" as Sender
 
 rectangle "Cisco Secure Email Gateway" {
+
     component "Public Listener" as Listener
 
-    rectangle "HAT\nHost Access Table" as HAT {
-        component "Critères de classement\n\nIP / réseau\nHostname / domaine\nDNS List\nOrganisation\nTalos / IP Reputation" as HATCRIT
+    rectangle "HAT du Listener" as HAT {
+        component "Critères Sender Group\nIP / réseau\nHostname / domaine\nDNS List\nOrganisation\nTalos / IP Reputation" as HATCRIT
+
         rectangle "Sender Group\nDans quelle catégorie ?" as SG
+
+        rectangle "Mail Flow Policy\n\nAction SMTP\nRate limits\nTLS / SMTP AUTH\nActivation Anti-Spam / Anti-Virus\nActivation SPF / DKIM / DMARC" as MFP
+
         HATCRIT --> SG : correspondance
+        SG --> MFP : politique associée
     }
 
-    rectangle "Mail Flow Policy\nQuelle politique appliquer ?" as MFP
+    rectangle "RCPT TO" as RCPT
     rectangle "RAT\nDestination acceptée ?" as RAT
-    rectangle "LDAP Recipient Acceptance\nLe destinataire existe ?" as LDAP
-    component "Message accepté" as ACCEPT
+    rectangle "LDAP Recipient Acceptance\n(optionnel)" as LDAP
+    component "DATA / message accepté" as ACCEPT
 }
 
 Sender --> Listener : Connexion SMTP
 Listener --> SG : évaluation HAT
-SG --> MFP
-MFP --> RAT : RCPT TO
-RAT --> LDAP
-LDAP --> ACCEPT
+MFP --> RCPT : conversation SMTP
+RCPT --> RAT
+RAT --> ACCEPT : destination acceptée
+RAT ..> LDAP : si configuré
+LDAP ..> ACCEPT : destinataire valide
 
 @enduml

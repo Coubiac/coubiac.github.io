@@ -9,32 +9,56 @@ top to bottom direction
 cloud "Internet" as Internet
 
 rectangle "Cisco Secure Email Gateway / IronPort" {
-    component "Public Listener\nSMTP" as Listener
 
-    package "Receipt - Réception SMTP" {
+    package "1. Receipt - Sélection de politique" {
 
-        rectangle "HAT\nHost Access Table" as HAT {
-            component "Critères du Sender Group\n\nIP / réseau\nHostname / domaine\nDNS List\nOrganisation\nTalos / IP Reputation" as HATCRIT
+        component "Public Listener\nSMTP" as Listener
+
+        rectangle "HAT du Listener\nHost Access Table" as HAT {
+            component "Critères des Sender Groups\n\nIP / réseau\nHostname / domaine\nDNS List\nOrganisation\nTalos / IP Reputation" as HATCRIT
+
             component "Sender Group\nClassification de l'hôte SMTP" as SG
-            HATCRIT --> SG : correspondance
-        }
 
-        component "Mail Flow Policy\nTraitement de la connexion" as MFP
-        component "MAIL FROM" as MAILFROM
-        component "SPF" as SPF
-        component "RCPT TO" as RCPT
-        component "RAT\nRecipient Access Table" as RAT
-        component "LDAP Recipient\nAcceptance" as LDAP
-        component "DATA\nRéception du message" as DATA
-        component "DKIM" as DKIM
-        component "DMARC" as DMARC
+            component "Mail Flow Policy\n\nACCEPT / REJECT / RELAY / TCPREFUSE\nRate limits / tailles / destinataires\nTLS / SMTP AUTH\nAnti-Spam / Anti-Virus : activation\nSPF / DKIM / DMARC : activation" as MFP
+
+            HATCRIT --> SG : correspondance
+            SG --> MFP : politique associée
+        }
     }
 
-    package "Work Queue" {
+    package "2. Receipt - Conversation SMTP" {
+
+        component "MAIL FROM" as MAILFROM
+        component "RCPT TO" as RCPT
+        component "RAT\nRecipient Access Table" as RAT
+        component "LDAP Recipient Acceptance\n(optionnel)" as LDAP
+        component "DATA\nRéception du message" as DATA
+
+        package "Authentification du message" {
+            component "SPF" as SPF
+            component "DKIM" as DKIM
+            component "DMARC" as DMARC
+        }
+
+        MAILFROM --> RCPT
+        RCPT --> RAT
+        RAT --> DATA : destination acceptée
+
+        RAT ..> LDAP : si configuré
+        LDAP ..> DATA : destinataire valide
+
+        MAILFROM ..> SPF : IP source + enveloppe
+        DATA ..> DKIM : message reçu
+        SPF --> DMARC : résultat SPF
+        DKIM --> DMARC : résultat DKIM
+        DATA ..> DMARC : domaine From:
+    }
+
+    package "3. Work Queue" {
         component "Traitement du message\n\nMessage Filters / Mail Policies\nAnti-Spam / Anti-Virus\nFile Reputation / Analysis\nContent Filters / Outbreak Filters" as WQ
     }
 
-    package "Delivery" {
+    package "4. Delivery" {
         component "SMTP Routing" as ROUTING
     }
 }
@@ -44,19 +68,23 @@ rectangle "Serveur de messagerie" {
 }
 
 Internet --> Listener
-Listener --> SG : évaluation HAT
-SG --> MFP
-MFP --> MAILFROM
-MAILFROM --> RCPT
-MAILFROM --> SPF
-RCPT --> RAT
-RAT --> LDAP
-LDAP --> DATA
-DATA --> DKIM
-SPF --> DMARC
-DKIM --> DMARC
-DMARC --> WQ
+Listener --> SG : évaluation du HAT
+MFP --> MAILFROM : session SMTP acceptée
+
+MFP ..> SPF : active selon politique
+MFP ..> DKIM : active selon politique
+MFP ..> DMARC : active selon politique
+MFP ..> WQ : marque pour scans\nAnti-Spam / Anti-Virus
+
+DATA --> WQ : message accepté
 WQ --> ROUTING
 ROUTING --> MAILSERVER
+
+note right of MFP
+La Mail Flow Policy est choisie
+très tôt, mais les contrôles sont
+exécutés seulement lorsque les
+données nécessaires sont disponibles.
+end note
 
 @enduml

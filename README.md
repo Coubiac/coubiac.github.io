@@ -20,4 +20,33 @@ tags:
 ---
 ```
 
+## Ajouter un schéma PlantUML
 
+Les sources PlantUML sont placées dans `assets/diagrams` avec l'extension `.puml`.
+
+Exemple :
+
+```plantuml
+@startuml
+Internet --> IronPort
+IronPort --> Exchange
+@enduml
+```
+
+À chaque modification d'un fichier `.puml` sur la branche `main`, le workflow `.github/workflows/plantuml.yml` génère automatiquement le fichier SVG correspondant dans le même répertoire.
+
+Ainsi :
+
+```text
+assets/diagrams/mail-flow.puml
+        |
+        +--> assets/diagrams/mail-flow.svg
+```
+
+Le SVG peut ensuite être inséré dans un article Markdown :
+
+```markdown
+![Flux de messagerie](/assets/diagrams/mail-flow.svg)
+```
+
+Le fichier `.puml` reste la source à modifier. Le SVG généré ne doit normalement pas être édité à la main.

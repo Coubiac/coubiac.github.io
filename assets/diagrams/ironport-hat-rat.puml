@@ -10,8 +10,13 @@ rectangle "Serveur SMTP distant\n203.0.113.25" as Sender
 
 rectangle "Cisco Secure Email Gateway" {
     component "Public Listener" as Listener
-    rectangle "HAT\nQui se connecte ?" as HAT
-    rectangle "Sender Group\nDans quelle catégorie ?" as SG
+
+    rectangle "HAT\nHost Access Table" as HAT {
+        component "Critères de classement\n\nIP / réseau\nHostname / domaine\nDNS List\nOrganisation\nTalos / IP Reputation" as HATCRIT
+        rectangle "Sender Group\nDans quelle catégorie ?" as SG
+        HATCRIT --> SG : correspondance
+    }
+
     rectangle "Mail Flow Policy\nQuelle politique appliquer ?" as MFP
     rectangle "RAT\nDestination acceptée ?" as RAT
     rectangle "LDAP Recipient Acceptance\nLe destinataire existe ?" as LDAP
@@ -19,8 +24,7 @@ rectangle "Cisco Secure Email Gateway" {
 }
 
 Sender --> Listener : Connexion SMTP
-Listener --> HAT
-HAT --> SG
+Listener --> SG : évaluation HAT
 SG --> MFP
 MFP --> RAT : RCPT TO
 RAT --> LDAP

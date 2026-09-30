@@ -1,0 +1,51 @@
+@startuml
+title SPF, DKIM et DMARC sur un mail entrant
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam componentStyle rectangle
+left to right direction
+
+rectangle "Connexion SMTP" {
+    component "IP source" as IP
+    component "MAIL FROM" as MAILFROM
+}
+
+component "SPF" as SPF
+
+rectangle "Message reçu via DATA" {
+    component "DKIM-Signature" as SIGN
+    component "Headers + Body" as BODY
+    component "From:" as HEADERFROM
+}
+
+component "DKIM" as DKIM
+component "DMARC" as DMARC
+
+IP --> SPF
+MAILFROM --> SPF
+
+SIGN --> DKIM
+BODY --> DKIM
+
+SPF --> DMARC : résultat SPF
+DKIM --> DMARC : résultat DKIM
+HEADERFROM --> DMARC : domaine visible
+
+note bottom of SPF
+Peut être évalué relativement tôt :
+l'IP source et l'identité d'enveloppe
+sont déjà disponibles.
+end note
+
+note bottom of DKIM
+Nécessite les données du message
+et la signature DKIM.
+end note
+
+note bottom of DMARC
+Évalue notamment l'alignement
+avec le domaine du From:.
+end note
+
+@enduml

@@ -1,0 +1,29 @@
+@startuml
+title HAT et RAT - Deux contrôles différents
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam componentStyle rectangle
+left to right direction
+
+rectangle "Serveur SMTP distant\n203.0.113.25" as Sender
+
+rectangle "Cisco Secure Email Gateway" {
+    component "Public Listener" as Listener
+    rectangle "HAT\nQui se connecte ?" as HAT
+    rectangle "Sender Group\nDans quelle catégorie ?" as SG
+    rectangle "Mail Flow Policy\nQuelle politique appliquer ?" as MFP
+    rectangle "RAT\nDestination acceptée ?" as RAT
+    rectangle "LDAP Recipient Acceptance\nLe destinataire existe ?" as LDAP
+    component "Message accepté" as ACCEPT
+}
+
+Sender --> Listener : Connexion SMTP
+Listener --> HAT
+HAT --> SG
+SG --> MFP
+MFP --> RAT : RCPT TO
+RAT --> LDAP
+LDAP --> ACCEPT
+
+@enduml

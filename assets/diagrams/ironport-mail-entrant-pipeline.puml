@@ -1,0 +1,60 @@
+@startuml
+title Parcours d'un mail entrant - Cisco Secure Email Gateway
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam componentStyle rectangle
+top to bottom direction
+
+cloud "Internet" as Internet
+
+rectangle "Cisco Secure Email Gateway / IronPort" {
+    component "Public Listener\nSMTP" as Listener
+
+    package "Receipt - Réception SMTP" {
+        component "HAT\nHost Access Table" as HAT
+        component "Sender Group\nClassification de l'hôte SMTP" as SG
+        component "Talos / IP Reputation" as REP
+        component "Mail Flow Policy\nTraitement de la connexion" as MFP
+        component "MAIL FROM" as MAILFROM
+        component "SPF" as SPF
+        component "RCPT TO" as RCPT
+        component "RAT\nRecipient Access Table" as RAT
+        component "LDAP Recipient\nAcceptance" as LDAP
+        component "DATA\nRéception du message" as DATA
+        component "DKIM" as DKIM
+        component "DMARC" as DMARC
+    }
+
+    package "Work Queue" {
+        component "Traitement du message\n\nMessage Filters / Mail Policies\nAnti-Spam / Anti-Virus\nFile Reputation / Analysis\nContent Filters / Outbreak Filters" as WQ
+    }
+
+    package "Delivery" {
+        component "SMTP Routing" as ROUTING
+    }
+}
+
+rectangle "Serveur de messagerie" {
+    component "Exchange / MTA interne" as MAILSERVER
+}
+
+Internet --> Listener
+Listener --> HAT
+HAT --> SG
+REP --> SG
+SG --> MFP
+MFP --> MAILFROM
+MAILFROM --> RCPT
+MAILFROM --> SPF
+RCPT --> RAT
+RAT --> LDAP
+LDAP --> DATA
+DATA --> DKIM
+SPF --> DMARC
+DKIM --> DMARC
+DMARC --> WQ
+WQ --> ROUTING
+ROUTING --> MAILSERVER
+
+@enduml

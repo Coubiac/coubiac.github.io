@@ -1,342 +1,920 @@
 ---
 layout: post
 title: "Cisco Secure Email (IronPort) : comprendre le parcours d'un mail entrant"
-description: "Listener, HAT, Sender Groups, Mail Flow Policies, RAT, LDAP, SPF, DKIM, DMARC et Work Queue : suivre pas à pas le traitement d'un mail entrant dans Cisco Secure Email Gateway."
+description: "Comprendre pas à pas le traitement d'un mail entrant dans Cisco Secure Email Gateway : Listener, HAT, Sender Groups, Mail Flow Policies, RAT, LDAP, MAIL FROM, From, SPF, DKIM, DMARC, Work Queue et routage."
 tags:
   - Cisco Secure Email
   - Messagerie
 ---
 
-Cisco Secure Email Gateway, historiquement connu sous les noms Cisco ESA ou IronPort, ne se contente pas de recevoir un message puis de lancer un antivirus et un antispam.
+Cisco Secure Email Gateway, encore souvent appelé **IronPort** ou **Cisco ESA**, ne traite pas un mail entrant comme un simple enchaînement "antispam puis antivirus".
 
-Lorsqu'un serveur distant tente de remettre un courrier, plusieurs décisions sont prises successivement : faut-il accepter la connexion ? Quelle politique appliquer à cet émetteur ? Le destinataire est-il valide ? Le message est-il correctement authentifié ? Contient-il du spam, un malware ou une URL suspecte ?
+Avant même d'avoir reçu le corps du message, la passerelle a déjà pris plusieurs décisions : quel serveur SMTP se connecte, à quelle catégorie il appartient, quelle politique lui appliquer, et pour quel destinataire il cherche à remettre le message.
 
-Cisco découpe le traitement d'un message en trois grandes phases :
+Ensuite seulement arrivent les contrôles qui nécessitent le message lui-même : DKIM, DMARC, antispam, antivirus, réputation des fichiers, filtres de contenu, etc.
 
-- **Receipt** : réception SMTP ;
-- **Work Queue** : analyse et traitement du message ;
-- **Delivery** : routage et livraison vers le serveur suivant.
+Le plus simple pour comprendre le produit est donc de suivre un mail **dans l'ordre où les informations deviennent disponibles**.
 
-Cette séparation est importante pour comprendre le rôle du HAT, du RAT, des Sender Groups et des Mail Flow Policies, mais aussi la position parfois déroutante de SPF, DKIM et DMARC dans le pipeline.
+> Cet article se concentre volontairement sur le **flux entrant depuis Internet**. Il décrit le fonctionnement générique de Cisco Secure Email Gateway et non l'architecture particulière d'une entreprise.
 
-## Vue générale du traitement d'un mail entrant
+## Le modèle mental : réception, analyse, livraison
+
+Cisco présente le pipeline autour de trois grandes phases :
+
+- **Receipt** : la connexion SMTP et l'acceptation du message ;
+- **Work Queue** : les traitements portant sur le message ;
+- **Delivery** : le routage vers le serveur suivant.
+
+Le parcours général peut être résumé ainsi :
 
 ![Parcours d'un mail entrant dans Cisco Secure Email Gateway](/assets/diagrams/ironport-mail-entrant-pipeline.svg)
 
-Le schéma est volontairement pédagogique. Le pipeline réel d'AsyncOS comporte davantage d'étapes et certaines fonctions peuvent varier selon la configuration de la passerelle.
+Il ne faut cependant pas lire ce schéma comme une trace CPU exacte. Certaines fonctions sont **activées très tôt dans la configuration**, mais ne peuvent être réellement exécutées que plus tard, lorsque les données nécessaires ont été reçues.
 
-## Le Listener : le point d'entrée SMTP
+C'est particulièrement important pour SPF, DKIM, DMARC, l'antispam et l'antivirus.
 
-Tout commence par un **Listener**.
+## Une analogie : un centre logistique sécurisé
 
-Un Listener correspond au service SMTP exposé par Cisco Secure Email Gateway sur une interface et un port donnés. Pour recevoir du courrier venant d'Internet, on utilise typiquement un **Public Listener**.
+On peut voir l'IronPort comme l'entrée d'un centre logistique.
 
-Dès qu'un serveur SMTP distant établit une connexion TCP, la passerelle connaît notamment son adresse IP source.
+Un camion arrive avec un colis.
 
-Elle peut donc commencer à prendre des décisions alors qu'aucun message n'a encore été transmis.
+Avant d'ouvrir le colis, le gardien va d'abord se demander :
 
-## HAT : qui se connecte ?
+1. Qui est ce camion ?
+2. Dans quelle catégorie de transporteur dois-je le ranger ?
+3. Quelles règles dois-je appliquer à cette catégorie ?
+4. Pour quelle personne le colis est-il destiné ?
+5. Cette personne existe-t-elle vraiment ?
+6. Maintenant que j'accepte le colis, que contient-il ?
+7. Où dois-je l'acheminer ?
 
-HAT signifie **Host Access Table**.
+La correspondance avec IronPort est assez directe :
 
-Son rôle est de déterminer comment traiter les machines qui établissent une connexion avec le Listener.
+| Centre logistique | Cisco Secure Email |
+|---|---|
+| Portail | Listener |
+| Contrôle du camion | HAT |
+| Catégorie du transporteur | Sender Group |
+| Règles appliquées | Mail Flow Policy |
+| Adresse de livraison autorisée | RAT |
+| Vérification de la personne | LDAP Recipient Acceptance |
+| Déchargement du colis | DATA |
+| Vérification de l'identité | SPF / DKIM / DMARC |
+| Scanner le colis | Work Queue |
+| Centre de tri | SMTP Routing |
+| Destination interne | Exchange ou autre MTA |
 
-Il faut faire attention au mot "sender". À ce stade, on ne parle pas principalement de l'adresse visible dans :
+Cette analogie permet surtout de comprendre une chose : **le HAT et le RAT ne sont ni un antispam ni un antivirus**.
 
-```text
-From: alice@example.org
-```
+Ils interviennent alors que la passerelle est encore en train de décider si elle accepte la transaction SMTP.
 
-On parle du serveur SMTP qui établit réellement la connexion avec l'IronPort.
+## 1. Le Listener : la porte d'entrée SMTP
 
-La passerelle connaît par exemple :
+Tout commence avec un **Listener**.
 
-```text
-Adresse IP source : 203.0.113.25
-```
+Le Listener est le service SMTP qui reçoit la connexion sur une interface et un port donnés. Pour le courrier venant d'Internet, il s'agit typiquement d'un **Public Listener**.
 
-Lorsqu'un Listener reçoit une connexion TCP, AsyncOS compare cette adresse aux Sender Groups configurés dans son HAT. Les Sender Groups sont évalués dans l'ordre jusqu'à trouver une correspondance.
+Lorsqu'un serveur distant ouvre une connexion TCP sur le port 25, l'IronPort connaît déjà une information importante :
 
-## Les Sender Groups
+~~~text
+IP source = 203.0.113.25
+~~~
 
-Un **Sender Group** permet de ranger plusieurs hôtes SMTP dans une même catégorie afin de leur appliquer le même comportement.
+Aucun message n'a encore été reçu, mais cette adresse IP suffit déjà pour commencer à classifier l'émetteur.
 
-La classification peut notamment utiliser :
+## 2. Le HAT : "qui vient me parler ?"
 
-- une adresse IP ou une plage réseau ;
+**HAT** signifie **Host Access Table**.
+
+Son rôle est de déterminer comment traiter les hôtes qui se connectent au Listener.
+
+À ce stade, le mot "sender" ne désigne pas nécessairement l'adresse visible dans un mail comme :
+
+~~~text
+From: alice@example.net
+~~~
+
+Il désigne surtout **le serveur SMTP distant qui vient d'établir la connexion**.
+
+Cisco indique que lorsqu'un Listener reçoit une connexion TCP, il compare l'adresse IP source aux Sender Groups du HAT dans leur ordre de configuration. Dès qu'un groupe correspond, la Mail Flow Policy associée est appliquée.
+
+Le HAT peut donc être vu comme une table de règles :
+
+~~~text
+Connexion depuis 203.0.113.25
+            |
+            v
+           HAT
+            |
+            v
+Dans quel Sender Group
+classer cette connexion ?
+~~~
+
+## 3. Le Sender Group : classer le serveur SMTP
+
+Un **Sender Group** regroupe des hôtes SMTP qui doivent être traités de la même manière.
+
+Cisco permet notamment de faire correspondre un Sender Group à partir de :
+
+- l'adresse IP ;
+- une plage réseau ;
 - un hostname ou un domaine ;
 - une DNS List ;
-- une organisation identifiée par le service de réputation ;
-- la réputation de l'adresse IP fournie par Cisco Talos.
+- une classification d'organisation ;
+- la réputation IP Cisco Talos / IPRS.
 
-Le terme **SBRS** (SenderBase Reputation Score) reste souvent employé dans les environnements et documentations historiques IronPort. Les versions récentes parlent plus généralement de réputation IP.
+Le terme historique **SBRS** ou SenderBase Reputation Score est encore très présent dans les environnements IronPort, même si les documentations récentes parlent davantage d'IP Reputation.
 
-Le Sender Group répond donc à la question :
+La logique est donc :
 
-> "Dans quelle catégorie dois-je ranger le serveur qui vient de se connecter ?"
+~~~text
+IP du serveur distant
+        |
+        v
+Talos / IP Reputation
+        |
+        v
+       HAT
+        |
+        v
+  Sender Group
+~~~
 
-Une machine dont la réputation est très mauvaise pourra par exemple correspondre à un groupe destiné aux sources bloquées, tandis qu'un serveur classique d'Internet pourra correspondre à un groupe accepté ou surveillé.
+Par exemple, une source connue comme très mauvaise peut être rangée dans un groupe bloqué, alors qu'un serveur Internet classique sera placé dans un groupe accepté ou soumis à davantage de limitations.
 
-Le Sender Group ne définit cependant pas à lui seul le comportement SMTP à appliquer.
+La phrase à retenir est :
 
-C'est le rôle de la Mail Flow Policy.
+> **Sender Group = "dans quelle catégorie je range le serveur SMTP qui se connecte ?"**
 
-## La Mail Flow Policy
+## 4. Mail Flow Policy : "comment traiter cette catégorie ?"
 
-Une **Mail Flow Policy** est associée à un Sender Group.
+Le Sender Group ne dit pas directement quoi faire.
 
-La distinction entre les deux est fondamentale :
+Il sélectionne une **Mail Flow Policy**.
+
+On obtient donc :
+
+~~~text
+HAT
+ |
+ v
+Sender Group
+ |
+ v
+Mail Flow Policy
+~~~
+
+La distinction est fondamentale :
 
 | Élément | Question |
 |---|---|
-| Sender Group | "Dans quelle catégorie se trouve ce serveur SMTP ?" |
-| Mail Flow Policy | "Comment dois-je traiter les connexions de cette catégorie ?" |
+| Sender Group | Dans quelle catégorie se trouve ce serveur SMTP ? |
+| Mail Flow Policy | Comment dois-je traiter les connexions de cette catégorie ? |
 
-La Mail Flow Policy contrôle la conversation SMTP. Elle peut notamment définir :
+Une Mail Flow Policy peut notamment définir :
 
-- l'acceptation ou le rejet d'une connexion ;
-- des limites de débit ;
-- le nombre maximal de connexions ou de destinataires ;
+- ACCEPT, REJECT, RELAY ou TCPREFUSE ;
+- des limites de connexions et de messages ;
+- le nombre de destinataires ;
+- la taille maximale d'un message ;
 - les contraintes TLS ;
-- différents contrôles de sécurité appliqués au flux.
+- certaines vérifications de l'expéditeur ;
+- l'activation de DKIM et DMARC ;
+- l'activation de l'antispam et de l'antivirus.
 
-Il faut retenir une subtilité importante :
+C'est ici qu'apparaît l'une des subtilités les plus importantes du produit.
 
-> **Activer un contrôle dans une Mail Flow Policy ne signifie pas nécessairement que ce contrôle est exécuté immédiatement.**
+### Configurer un contrôle n'est pas l'exécuter
 
-La Mail Flow Policy est sélectionnée très tôt dans le traitement. Certaines opérations ne pourront cependant être effectuées que plus tard, lorsque la passerelle disposera des informations nécessaires.
+Une Mail Flow Policy peut par exemple dire :
 
-C'est particulièrement important pour comprendre SPF, DKIM et DMARC.
+~~~text
+DKIM verification : ON
+DMARC verification : ON
+Anti-Spam         : ON
+Anti-Virus        : ON
+~~~
 
-## HAT et RAT : deux rôles complètement différents
+La politique est pourtant sélectionnée très tôt, avant que le message complet soit disponible.
 
-HAT et RAT sont faciles à confondre à cause de leurs noms proches.
+Cela ne signifie donc pas que l'antivirus est exécuté dans le HAT.
 
-Ils répondent pourtant à deux questions différentes.
+Cela signifie plutôt :
+
+> "Les messages acceptés avec cette politique devront subir ces contrôles."
+
+Cisco précise d'ailleurs que si l'antispam ou l'antivirus sont activés via le HAT / Mail Flow Policy, le message est marqué pour subir ces scans lorsqu'il passera dans la Work Queue.
+
+## 5. La conversation SMTP
+
+Une fois la connexion acceptée, la conversation SMTP se poursuit.
+
+Exemple simplifié :
+
+~~~smtp
+S: 220 mx.example.net ESMTP
+
+C: EHLO mail.example.org
+S: 250 mx.example.net
+
+C: MAIL FROM:<alice@example.org>
+S: 250 OK
+
+C: RCPT TO:<bob@example.net>
+S: 250 OK
+
+C: DATA
+S: 354 End data with <CR><LF>.<CR><LF>
+
+C: From: Alice <alice@example.org>
+C: To: Bob <bob@example.net>
+C: Subject: Bonjour
+C:
+C: Bonjour Bob...
+C: .
+~~~
+
+Pour comprendre la suite, il faut absolument distinguer **l'enveloppe SMTP** du **message placé à l'intérieur**.
+
+## 6. MAIL FROM et From: ne sont pas la même chose
+
+Avant DATA, SMTP manipule une enveloppe :
+
+~~~smtp
+MAIL FROM:<alice@example.org>
+RCPT TO:<bob@example.net>
+~~~
+
+Après DATA arrive le message RFC 5322 :
+
+~~~text
+From: Alice <alice@example.org>
+To: Bob <bob@example.net>
+Subject: Bonjour
+
+Bonjour Bob...
+~~~
+
+On peut reprendre l'analogie d'une lettre papier :
+
+~~~text
+ENVELOPPE SMTP
+--------------------------------
+Expéditeur de retour :
+alice@example.org
+
+Destinataire :
+bob@example.net
+
+
+MESSAGE À L'INTÉRIEUR
+--------------------------------
+From: Alice <alice@example.org>
+To: Bob <bob@example.net>
+~~~
+
+Le **MAIL FROM** correspond au reverse-path SMTP. Après livraison, cette information est généralement visible sous la forme d'un header **Return-Path** ajouté par le système de réception.
+
+Le **From:** est, lui, un header du message. C'est l'adresse présentée comme auteur du courrier.
+
+Dans beaucoup de mails "normaux", les deux sont identiques :
+
+~~~text
+MAIL FROM:<alice@example.org>
+
+From: Alice <alice@example.org>
+~~~
+
+C'est probablement le cas le plus fréquent lorsqu'un utilisateur envoie directement via son infrastructure habituelle.
+
+Mais ils peuvent être différents, notamment avec des plateformes d'envoi, des systèmes de notification ou des mécanismes de gestion des retours.
+
+Exemple :
+
+~~~text
+MAIL FROM:<bounce@mailer.example.com>
+
+From: facturation@example.com
+~~~
+
+Cette différence ne provoque **pas automatiquement** un échec DMARC. Nous verrons pourquoi plus loin.
+
+## 7. RAT : "pour qui accepte-t-on du courrier ?"
+
+Arrive ensuite le destinataire SMTP :
+
+~~~smtp
+RCPT TO:<bob@example.net>
+~~~
+
+C'est là qu'intervient le **RAT**, pour **Recipient Access Table**.
+
+Le RAT répond principalement à :
+
+> "Cette passerelle est-elle censée accepter du courrier pour cette destination ?"
+
+Par exemple :
+
+~~~text
+example.net        ACCEPT
+filiale.example    ACCEPT
+autre-domaine.tld  REJECT
+~~~
+
+Le RAT est particulièrement important sur un Public Listener.
+
+Sans ce contrôle, une passerelle pourrait accepter un message venant d'un tiers et destiné à un autre tiers, puis le relayer : ce serait un **open relay**.
+
+La différence entre HAT et RAT peut être résumée ainsi :
 
 ![Différence entre HAT et RAT dans Cisco Secure Email Gateway](/assets/diagrams/ironport-hat-rat.svg)
 
-Le **HAT** s'intéresse principalement au serveur SMTP qui se connecte.
+> **HAT : qui se connecte ?**
 
-Le **RAT** s'intéresse à la destination pour laquelle ce serveur tente de remettre du courrier.
+> **RAT : pour quelle destination cherche-t-il à remettre un message ?**
 
-## RAT : pour qui accepte-t-on du courrier ?
+## 8. RAT et LDAP Recipient Acceptance
 
-RAT signifie **Recipient Access Table**.
+Le RAT peut accepter le domaine :
 
-Le RAT intervient au niveau du destinataire de l'enveloppe SMTP, c'est-à-dire lors du `RCPT TO`.
-
-Prenons cette conversation :
-
-```smtp
-EHLO mail.example.org
-MAIL FROM:<alice@example.org>
-RCPT TO:<bob@example.net>
-```
-
-Le RAT permet notamment à la passerelle de déterminer si elle est censée accepter du courrier destiné à `example.net`.
-
-Sur une passerelle protégeant plusieurs domaines, le RAT peut par exemple contenir les domaines pour lesquels le Listener doit accepter des messages.
-
-Le RAT n'est donc ni un antispam, ni un antivirus.
-
-Il répond principalement à une question d'acceptation :
-
-> "Est-ce une destination pour laquelle cette passerelle accepte du courrier ?"
-
-Cette vérification est également essentielle pour éviter qu'une passerelle entrante ne se comporte comme un **open relay**.
-
-## RAT et LDAP Recipient Acceptance
-
-Accepter le domaine `example.net` ne signifie pas nécessairement que toutes les adresses possibles de ce domaine existent.
-
-Le RAT peut donc accepter :
-
-```text
+~~~text
 @example.net
-```
+~~~
 
-alors qu'une vérification LDAP peut ensuite déterminer si :
+mais cela ne prouve pas que :
 
-```text
-bob@example.net
-```
+~~~text
+personne.inexistante@example.net
+~~~
 
-correspond réellement à un utilisateur ou à un destinataire valide.
+existe.
 
-On peut retenir :
+Une requête **LDAP Recipient Acceptance** peut donc compléter le RAT.
 
-- **RAT** : est-ce une destination que j'accepte ?
-- **LDAP Recipient Acceptance** : ce destinataire précis existe-t-il ?
+La logique devient :
 
-Cette validation permet notamment de rejeter un destinataire inexistant pendant la conversation SMTP plutôt que d'accepter le message puis de générer ultérieurement un NDR.
+~~~text
+RCPT TO:<bob@example.net>
+          |
+          v
+         RAT
+          |
+          | domaine accepté
+          v
+        LDAP
+          |
+          | destinataire existant ?
+       +--+--+
+       |     |
+      oui   non
+       |     |
+       v     v
+   continue rejet SMTP
+~~~
 
-## Le moment charnière : la commande DATA
+C'est une distinction utile :
 
-Jusqu'ici, une grande partie des décisions peut être prise sans avoir reçu le contenu du message.
+> **RAT = "est-ce une destination que je prends en charge ?"**
 
-La conversation SMTP finit cependant par atteindre :
+> **LDAP = "ce destinataire précis existe-t-il réellement ?"**
 
-```smtp
+Cette vérification permet par exemple de rejeter une adresse inexistante directement pendant la session SMTP.
+
+## 9. DATA : le moment où le message arrive réellement
+
+Après MAIL FROM et RCPT TO, le client SMTP envoie :
+
+~~~smtp
 DATA
-```
+~~~
 
-Le serveur distant transmet alors les en-têtes, le corps du message et les éventuelles pièces jointes.
+C'est seulement à partir de là que la passerelle reçoit :
 
-Avant cette étape, la passerelle dispose principalement d'informations relatives à la connexion SMTP et à l'enveloppe.
+- le header From: ;
+- le Subject: ;
+- la DKIM-Signature ;
+- les autres headers ;
+- le corps ;
+- les URLs ;
+- les pièces jointes.
 
-Après cette étape, elle dispose réellement du message à analyser.
+Cette frontière est essentielle.
 
-Cette frontière aide beaucoup à comprendre le fonctionnement des différents contrôles de sécurité.
+Avant DATA, l'IronPort dispose principalement de la connexion SMTP et de l'enveloppe.
 
-## SPF, DKIM et DMARC : configuration et exécution
+Après DATA, il possède le message qu'il pourra analyser.
 
-C'est l'un des points les moins intuitifs du fonctionnement de Cisco Secure Email Gateway.
+## 10. SPF : authentifier une identité SMTP
 
-Les fonctions d'authentification sont activées par la politique appliquée au flux entrant. Cette politique est choisie très tôt dans la réception.
+SPF travaille avec l'adresse IP du serveur qui remet le message et une identité SMTP.
 
-Mais les vérifications ne peuvent être réalisées qu'au moment où les informations nécessaires sont disponibles.
+Pour un message classique, l'identité la plus importante est celle du **MAIL FROM**.
 
-Il faut donc distinguer :
+Exemple :
 
-- **la décision d'effectuer le contrôle** ;
-- **le moment où le contrôle peut réellement être exécuté**.
+~~~text
+IP source :
+192.0.2.25
 
-![Relations entre SPF, DKIM et DMARC sur un mail entrant](/assets/diagrams/ironport-spf-dkim-dmarc.svg)
+MAIL FROM:
+alice@example.org
+~~~
 
-## SPF peut être évalué tôt
+Le serveur récepteur interroge alors les enregistrements SPF du domaine concerné pour déterminer si cette IP est autorisée.
 
-SPF repose notamment sur l'adresse IP du serveur qui remet le message et sur l'identité d'enveloppe SMTP.
+Conceptuellement :
 
-La passerelle connaît déjà l'adresse IP dès l'établissement de la connexion.
+~~~text
+192.0.2.25
+    +
+example.org
+    |
+    v
+   DNS
+    |
+    v
+SPF PASS / FAIL
+~~~
 
-Après :
+La RFC SPF recommande d'effectuer ce contrôle pendant la transaction SMTP. C'est donc un contrôle qui peut intervenir **assez tôt**, sans attendre l'analyse antivirus ou antispam.
 
-```smtp
-MAIL FROM:<bounce@example.org>
-```
+La RFC recommande également la vérification de l'identité HELO/EHLO. C'est particulièrement important dans le cas d'un reverse-path nul.
 
-elle connaît également l'identité d'enveloppe nécessaire à l'évaluation SPF.
-
-SPF peut donc être évalué relativement tôt pendant la réception SMTP.
-
-## DKIM nécessite le message
+## 11. DKIM : vérifier la signature du message
 
 DKIM fonctionne différemment.
 
-Un message signé contient notamment un en-tête :
+Un message peut contenir :
 
-```text
-DKIM-Signature: ...
-```
+~~~text
+DKIM-Signature:
+  v=1;
+  d=example.org;
+  s=selector1;
+  ...
+~~~
 
-La signature porte sur des en-têtes et sur le corps du message.
+Le récepteur récupère la clé publique dans le DNS puis vérifie la signature.
 
-La passerelle doit donc disposer du message pour vérifier correctement cette signature.
+Mais la signature DKIM porte sur des headers et sur le corps du message.
 
-Une vérification DKIM ne peut par conséquent pas être effectuée lors de l'établissement initial de la connexion SMTP.
+L'IronPort doit donc avoir reçu le message pour pouvoir effectuer cette validation.
 
-## DMARC dépend de SPF, DKIM et du From
+On peut résumer ainsi :
 
-DMARC s'appuie sur les mécanismes SPF et DKIM, mais ajoute la notion d'**alignement** avec le domaine visible dans le champ `From:` du message.
+~~~text
+DATA
+ |
+ +--> headers
+ |
+ +--> DKIM-Signature
+ |
+ +--> corps
+ |
+ v
+Vérification cryptographique
+ |
+ v
+DKIM PASS / FAIL
+~~~
 
-DMARC ne nécessite pas que SPF et DKIM réussissent simultanément.
+Il est donc impossible que la validation DKIM complète ait lieu au simple moment où le HAT classe l'adresse IP entrante.
 
-Un message peut passer DMARC si SPF est valide et correctement aligné même si DKIM échoue. L'inverse est également possible : un DKIM valide et aligné peut permettre à DMARC de réussir malgré un échec SPF.
+Elle peut être **activée par la Mail Flow Policy**, mais exécutée seulement lorsque le message est disponible.
 
-Cette notion d'alignement est essentielle. Un simple `SPF PASS` ou `DKIM PASS` ne signifie pas automatiquement que DMARC sera lui aussi valide.
+## 12. DMARC : l'alignement est la notion clé
 
-## La Work Queue
+DMARC utilise le domaine visible dans le header **From:**, appelé Author Domain, puis vérifie si SPF ou DKIM a authentifié une identité **alignée** avec ce domaine.
 
-Une fois le message reçu, il est remis au pipeline de traitement de la **Work Queue**.
+Le schéma suivant résume les relations :
 
-C'est ici que Cisco Secure Email Gateway peut effectuer de nombreux traitements portant sur le message lui-même.
+![SPF, DKIM et DMARC : enveloppe, message et alignement](/assets/diagrams/ironport-spf-dkim-dmarc.svg)
 
-On y retrouve notamment :
+DMARC ne demande pas que SPF **et** DKIM soient tous les deux valides.
 
-- les Message Filters ;
-- les politiques appliquées aux messages ;
-- l'antispam ;
-- l'antivirus ;
-- l'analyse de réputation et l'analyse des fichiers ;
-- les Content Filters ;
-- les Outbreak Filters ;
-- différentes fonctions de quarantaine ou d'analyse.
+Il faut qu'au moins l'un des deux fournisse :
 
-Contrairement au HAT ou au RAT, ces traitements ont généralement besoin de connaître réellement le message ou son contenu.
+1. un résultat valide ;
+2. une identité alignée avec le domaine du From:.
 
-Un antivirus, par exemple, ne peut évidemment pas analyser une pièce jointe qui n'a pas encore été transmise par le serveur SMTP distant.
+On peut donc avoir :
 
-## Pourquoi l'antispam et l'antivirus sont-ils liés à la Mail Flow Policy ?
+~~~text
+SPF  PASS + aligné
+DKIM FAIL
 
-Là encore, il faut distinguer **activation** et **exécution**.
+=> DMARC PASS
+~~~
 
-La politique appliquée au flux peut décider que les messages reçus depuis un certain Sender Group devront être soumis à l'antispam ou à l'antivirus.
+ou l'inverse :
 
-Cette décision est donc prise pendant la phase de réception.
+~~~text
+SPF  FAIL
+DKIM PASS + aligné
 
-Le scan lui-même est effectué plus tard dans le pipeline, lorsque le message a été accepté et remis à la Work Queue.
+=> DMARC PASS
+~~~
 
-Autrement dit, la politique peut dire :
+### MAIL FROM différent du From: : est-ce que DMARC casse ?
 
-> "Ce message devra être analysé."
+Pas nécessairement.
 
-La Work Queue réalise ensuite réellement cette analyse.
+Prenons :
 
-## Pourquoi Message Tracking peut-il sembler raconter une autre histoire ?
+~~~text
+MAIL FROM:<bounce@mailer.example.com>
 
-Lorsqu'on consulte Message Tracking, les événements liés à SPF, DKIM, DMARC, antispam ou antivirus peuvent donner l'impression d'être regroupés assez tard dans le traitement.
+From: facturation@example.com
+~~~
 
-Ce n'est pas forcément contradictoire avec la configuration du HAT ou de la Mail Flow Policy.
+Les domaines DNS sont bien différents :
 
-La connexion SMTP et le message sont deux objets différents dans le fonctionnement d'AsyncOS.
+~~~text
+mailer.example.com
+example.com
+~~~
 
-Cisco utilise notamment des identifiants différents dans ses logs :
+Le premier est un sous-domaine du second.
 
-- **ICID** identifie une connexion SMTP entrante ;
-- **MID** identifie un message traité par la passerelle ;
-- **RID** identifie un destinataire ;
-- **DCID** identifie une connexion SMTP utilisée pour la livraison.
+DMARC définit deux modes d'alignement.
 
-La classification HAT et Sender Group peut donc avoir été décidée dès l'établissement de l'ICID alors qu'un résultat DKIM ou DMARC ne peut apparaître qu'une fois que le MID existe et que le contenu correspondant a été reçu.
+### Alignement strict
 
-Message Tracking montre le déroulement du traitement du message. Il ne faut donc pas nécessairement interpréter son ordre visuel comme l'endroit exact où chaque fonction a été configurée.
+En mode strict, les domaines doivent être identiques.
 
-## Ce qu'il faut retenir
+~~~text
+SPF domain : mailer.example.com
+From domain: example.com
 
-Le traitement entrant devient beaucoup plus simple à comprendre lorsqu'on sépare les rôles.
+=> pas d'alignement strict
+~~~
 
-**Le Listener** reçoit la connexion SMTP.
+### Alignement relaxed
 
-**Le HAT** détermine comment considérer le serveur qui se connecte.
+En mode relaxed, les identités doivent partager le même **Organizational Domain**.
 
-**Le Sender Group** classe ce serveur.
+Dans cet exemple :
 
-**La Mail Flow Policy** définit comment traiter cette catégorie de connexion.
+~~~text
+mailer.example.com
+        |
+        +--> Organizational Domain = example.com
 
-**Le RAT** vérifie que la passerelle accepte du courrier pour la destination demandée.
+example.com
+        |
+        +--> Organizational Domain = example.com
+~~~
 
-**LDAP Recipient Acceptance** peut vérifier que le destinataire précis existe réellement.
+Il y a donc alignement relaxed.
 
-**SPF** peut être évalué relativement tôt grâce à l'adresse IP source et à l'identité d'enveloppe.
+La RFC DMARC 9989 donne d'ailleurs un exemple du même type avec un MAIL FROM sous **child.example.com** et un From sous **example.com**.
 
-**DKIM** nécessite le message lui-même.
+Autrement dit :
 
-**DMARC** exploite notamment SPF, DKIM et le domaine du champ `From:` afin de contrôler leur alignement.
+> Des domaines différents au sens DNS peuvent tout de même être alignés pour DMARC.
 
-**La Work Queue** effectue ensuite l'essentiel des analyses portant sur le contenu du message : antispam, antivirus, réputation des fichiers, filtres de contenu, Outbreak Filters, etc.
+C'est volontaire.
 
-Enfin, **Delivery** se charge de router le message accepté vers le serveur de messagerie suivant.
+## 13. Et si le MAIL FROM appartient à un prestataire ?
 
-La distinction essentielle est donc moins "quelle fonction se trouve dans quel menu ?" que :
+Prenons un autre exemple :
 
-> **De quelles informations la passerelle dispose-t-elle à cet instant, et quel contrôle peut-elle réellement effectuer avec ces informations ?**
+~~~text
+MAIL FROM:<bounce@prestataire.net>
 
-C'est ce raisonnement qui permet de comprendre pourquoi certaines fonctions sont configurées très tôt dans le flux, tout en apparaissant beaucoup plus tard dans Message Tracking.
+From: facturation@example.com
+
+DKIM-Signature:
+d=example.com
+~~~
+
+SPF peut être parfaitement valide pour prestataire.net :
+
+~~~text
+SPF PASS
+~~~
+
+mais il n'est pas aligné avec example.com :
+
+~~~text
+prestataire.net != example.com
+=> SPF alignment FAIL
+~~~
+
+En revanche, si la signature DKIM est valide avec :
+
+~~~text
+d=example.com
+~~~
+
+alors DKIM est aligné.
+
+Résultat :
+
+~~~text
+SPF : PASS
+SPF alignment : FAIL
+
+DKIM : PASS
+DKIM alignment : PASS
+
+DMARC : PASS
+~~~
+
+C'est l'une des raisons pour lesquelles regarder seulement "SPF PASS" ne suffit pas pour comprendre un résultat DMARC.
+
+## 14. Le cas particulier des bounces
+
+Un véritable message de notification d'échec de livraison utilise un reverse-path nul :
+
+~~~smtp
+MAIL FROM:<>
+~~~
+
+La RFC SMTP impose ce comportement aux notifications d'échec afin d'éviter les boucles.
+
+Imaginons sinon :
+
+~~~text
+message original
+      |
+      X
+échec de livraison
+      |
+      v
+bounce
+      |
+      X
+échec du bounce
+      |
+      v
+bounce du bounce
+      |
+      X
+...
+~~~
+
+Avec un reverse-path nul, si le bounce lui-même ne peut pas être livré, le serveur ne génère pas un nouveau DSN SMTP.
+
+Attention à une confusion fréquente :
+
+**MAIL FROM:<> ne signifie pas que le message n'a pas de header From:.**
+
+Un DSN peut très bien contenir :
+
+~~~text
+From: Mail Delivery Subsystem <mailer-daemon@example.org>
+~~~
+
+Il faut donc toujours distinguer l'enveloppe SMTP et les headers du message.
+
+### SPF lorsque MAIL FROM est vide
+
+SPF prévoit également ce cas.
+
+Lorsque le reverse-path est nul, la RFC SPF construit l'identité MAIL FROM à partir de **postmaster** et de l'identité HELO/EHLO du serveur.
+
+Le HELO devient donc particulièrement important pour ces messages système.
+
+## 15. Alors où sont réellement SPF, DKIM et DMARC dans IronPort ?
+
+C'est probablement le point le plus déroutant lorsqu'on découvre le produit.
+
+Dans l'interface, les contrôles d'authentification sont associés à la **Mail Flow Policy**.
+
+Or cette politique est sélectionnée très tôt :
+
+~~~text
+connexion TCP
+     |
+     v
+  Listener
+     |
+     v
+    HAT
+     |
+     v
+Sender Group
+     |
+     v
+Mail Flow Policy
+~~~
+
+On pourrait donc croire que SPF, DKIM et DMARC sont exécutés "dans le HAT".
+
+Ce n'est pas la bonne lecture.
+
+La Mail Flow Policy décide **quels contrôles doivent être appliqués**.
+
+Leur exécution réelle dépend ensuite des informations disponibles :
+
+~~~text
+Connexion TCP
+     |
+     v
+HAT / Sender Group
+     |
+     v
+Mail Flow Policy
+     |
+     v
+EHLO
+     |
+     v
+MAIL FROM
+     |
+     +----> SPF peut être évalué
+     |
+     v
+RCPT TO
+     |
+     +----> RAT / LDAP
+     |
+     v
+DATA
+     |
+     +----> DKIM devient vérifiable
+     |
+     +----> From: devient disponible
+     |
+     +----> DMARC peut évaluer l'alignement
+~~~
+
+C'est donc plus juste de dire :
+
+> **SPF, DKIM et DMARC sont activés par la politique sélectionnée très tôt, mais leur vérification effective se déroule lorsque les données nécessaires sont disponibles.**
+
+## 16. La Work Queue : analyser le message accepté
+
+Après réception, le message traverse la **Work Queue**.
+
+Cisco y place notamment des traitements comme :
+
+- Message Filters ;
+- Mail Policies ;
+- antispam ;
+- antivirus ;
+- Graymail ;
+- réputation et analyse des fichiers ;
+- Content Filters ;
+- Outbreak Filters ;
+- quarantaines selon les politiques.
+
+Cette fois, on travaille réellement sur le contenu du message.
+
+L'analogie du centre logistique fonctionne bien :
+
+~~~text
+AVANT DATA
+--------------------------------
+Qui est le camion ?
+Quelles règles lui appliquer ?
+Pour qui livre-t-il ?
+Cette personne existe-t-elle ?
+
+
+APRÈS RÉCEPTION DU MESSAGE
+--------------------------------
+Le colis est-il dangereux ?
+Contient-il un malware ?
+Ressemble-t-il à du spam ?
+Contient-il une URL suspecte ?
+Une règle de contenu est-elle déclenchée ?
+~~~
+
+L'antivirus ne peut évidemment pas scanner une pièce jointe tant que celle-ci n'a pas été reçue.
+
+## 17. Pourquoi l'antispam et l'antivirus apparaissent-ils dans la Mail Flow Policy ?
+
+Pour la même raison que DKIM ou DMARC : il faut distinguer **la décision** et **l'exécution**.
+
+La Mail Flow Policy peut décider :
+
+~~~text
+Anti-Spam  = ON
+Anti-Virus = ON
+~~~
+
+Ce qui signifie :
+
+> "Si j'accepte ce message, il devra subir ces scans."
+
+Le message sera ensuite réellement analysé dans la Work Queue.
+
+## 18. Pourquoi Message Tracking peut donner une impression différente
+
+Lorsqu'on consulte Message Tracking, l'ordre visuel peut donner l'impression que SPF, DKIM ou DMARC sont exécutés assez tard.
+
+Ce n'est pas nécessairement contradictoire avec le fait que leur activation dépend d'une Mail Flow Policy sélectionnée très tôt.
+
+AsyncOS distingue notamment plusieurs objets dans ses logs :
+
+- **ICID** : connexion SMTP entrante ;
+- **MID** : message ;
+- **RID** : destinataire ;
+- **DCID** : connexion SMTP de livraison.
+
+On peut donc avoir conceptuellement :
+
+~~~text
+ICID 100
+ |
+ +-- IP distante
+ +-- Listener
+ +-- HAT
+ +-- Sender Group
+ +-- Mail Flow Policy
+ |
+ +---- MID 500
+        |
+        +-- MAIL FROM
+        +-- RCPT TO
+        +-- DATA
+        +-- SPF
+        +-- DKIM
+        +-- DMARC
+        +-- Work Queue
+~~~
+
+Le HAT peut avoir classé la connexion dès l'ICID, alors que DKIM et DMARC sont nécessairement liés au message et apparaissent donc au niveau du MID.
+
+Message Tracking raconte surtout **la vie du message**. Il ne faut pas le lire comme une représentation exacte de l'arborescence de configuration de l'appliance.
+
+## 19. Delivery : où envoyer le message ?
+
+Une fois le message accepté et traité, reste à le livrer.
+
+Cisco Secure Email Gateway peut utiliser ses mécanismes de routage SMTP pour associer un domaine à un ou plusieurs next-hops.
+
+Conceptuellement :
+
+~~~text
+Work Queue
+    |
+    v
+SMTP Routing
+    |
+    v
+Exchange / autre MTA
+~~~
+
+C'est la dernière grande phase du pipeline : **Delivery**.
+
+## La chaîne mentale à retenir
+
+Si je devais résumer tout le fonctionnement entrant en quelques lignes :
+
+~~~text
+Listener
+   |
+   v
+HAT                Qui se connecte ?
+   |
+Sender Group       Dans quelle catégorie ?
+   |
+Mail Flow Policy   Comment traiter cette catégorie ?
+   |
+EHLO / MAIL FROM   Identité SMTP
+   |
+RCPT TO
+   |
+RAT                Est-ce une destination acceptée ?
+   |
+LDAP               Le destinataire existe-t-il ?
+   |
+DATA               Réception du message
+   |
+SPF / DKIM / DMARC Authentification et alignement
+   |
+Work Queue         Spam, virus, fichiers, filtres...
+   |
+SMTP Routing
+   |
+Exchange / MTA
+~~~
+
+Et surtout, quatre distinctions permettent d'éviter la plupart des confusions :
+
+> **HAT regarde principalement le serveur SMTP qui établit la connexion.**
+
+> **RAT regarde la destination SMTP demandée dans RCPT TO.**
+
+> **MAIL FROM appartient à l'enveloppe SMTP, alors que From: appartient au message.**
+
+> **La Mail Flow Policy sélectionne et active des traitements ; cela ne signifie pas que tous sont exécutés immédiatement au moment où le HAT choisit la politique.**
+
+C'est cette dernière idée qui permet de comprendre pourquoi SPF peut être traité relativement tôt, pourquoi DKIM nécessite le message, pourquoi DMARC a besoin de l'Author Domain du From:, et pourquoi Message Tracking peut donner une impression de chronologie différente.
 
 ## Sources
 
 - [Cisco Secure Email Gateway - Understanding the Email Pipeline](https://www.cisco.com/c/en/us/td/docs/security/esa/esa16-5/user_guide/b_ESA_Admin_Guide_16-5/b_ESA_Admin_Guide_12_1_chapter_011.html)
-- [Cisco Secure Email Gateway - HAT, Sender Groups and Mail Flow Policies](https://www.cisco.com/c/en/us/td/docs/security/esa/esa16-5/user_guide/b_ESA_Admin_Guide_16-5/b_ESA_Admin_Guide_12_1_chapter_0110.html)
-- [Cisco Secure Email Gateway - Recipient Access Table](https://www.cisco.com/c/en/us/td/docs/security/esa/esa16-5/user_guide/b_ESA_Admin_Guide_16-5/b_ESA_Admin_Guide_12_1_chapter_0111.html)
+- [Cisco Secure Email Gateway - Host Access Table, Sender Groups and Mail Flow Policies](https://www.cisco.com/c/en/us/td/docs/security/esa/esa16-5/user_guide/b_ESA_Admin_Guide_16-5/b_ESA_Admin_Guide_12_1_chapter_0110.html)
 - [Cisco Secure Email Gateway - Email Authentication](https://www.cisco.com/c/en/us/td/docs/security/esa/esa16-5/user_guide/b_ESA_Admin_Guide_16-5/b_ESA_Admin_Guide_12_1_chapter_010110.html)
+- [Cisco Secure Email Gateway - Routing and Delivery Features](https://www.cisco.com/c/en/us/td/docs/security/esa/esa16-5/user_guide/b_ESA_Admin_Guide_16-5/b_ESA_Admin_Guide_12_1_chapter_011010.html)
+- [RFC 5321 - Simple Mail Transfer Protocol](https://www.rfc-editor.org/rfc/rfc5321.html)
+- [RFC 5322 - Internet Message Format](https://www.rfc-editor.org/rfc/rfc5322.html)
+- [RFC 7208 - Sender Policy Framework](https://www.rfc-editor.org/rfc/rfc7208.html)
+- [RFC 6376 - DomainKeys Identified Mail](https://www.rfc-editor.org/rfc/rfc6376.html)
+- [RFC 9989 - Domain-Based Message Authentication, Reporting, and Conformance](https://www.rfc-editor.org/rfc/rfc9989.html)

@@ -1,0 +1,17 @@
+@startuml
+title Génération des schémas du blog
+
+left to right direction
+
+rectangle "Fichier .puml" as PUML
+rectangle "GitHub Actions" as GHA
+rectangle "PlantUML" as PLANTUML
+rectangle "Fichier .svg" as SVG
+rectangle "Article Jekyll" as ARTICLE
+
+PUML --> GHA : push sur main
+GHA --> PLANTUML : génération
+PLANTUML --> SVG
+SVG --> ARTICLE : image Markdown
+
+@enduml

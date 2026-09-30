@@ -10,16 +10,13 @@ cloud "Internet" as Internet
 
 rectangle "Cisco Secure Email Gateway / IronPort" {
 
-    package "1. Receipt - Sélection de politique" {
-
+    package "1. Receipt - Connexion et sélection de politique" {
         component "Public Listener\nSMTP" as Listener
 
         rectangle "HAT du Listener\nHost Access Table" as HAT {
             component "Critères des Sender Groups\n\nIP / réseau\nHostname / domaine\nDNS List\nOrganisation\nTalos / IP Reputation" as HATCRIT
-
             component "Sender Group\nClassification de l'hôte SMTP" as SG
-
-            component "Mail Flow Policy\n\nACCEPT / REJECT / RELAY / TCPREFUSE\nRate limits / tailles / destinataires\nTLS / SMTP AUTH\nAnti-Spam / Anti-Virus : activation\nSPF / DKIM / DMARC : activation" as MFP
+            component "Mail Flow Policy\n\nACCEPT / REJECT / RELAY / TCPREFUSE\nRate limits / TLS / limites SMTP\nActivation des contrôles de sécurité" as MFP
 
             HATCRIT --> SG : correspondance
             SG --> MFP : politique associée
@@ -27,19 +24,21 @@ rectangle "Cisco Secure Email Gateway / IronPort" {
     }
 
     package "2. Receipt - Conversation SMTP" {
-
-        component "MAIL FROM" as MAILFROM
-        component "RCPT TO" as RCPT
+        component "EHLO / HELO" as HELO
+        component "MAIL FROM\nEnvelope sender / reverse-path" as MAILFROM
+        component "RCPT TO\nEnvelope recipient" as RCPT
         component "RAT\nRecipient Access Table" as RAT
         component "LDAP Recipient Acceptance\n(optionnel)" as LDAP
-        component "DATA\nRéception du message" as DATA
+        component "DATA\nHeaders + corps + pièces jointes" as DATA
+        component "From:\nAuthor Domain visible" as FROMHDR
 
-        package "Authentification du message" {
+        package "Authentification du courrier" {
             component "SPF" as SPF
             component "DKIM" as DKIM
             component "DMARC" as DMARC
         }
 
+        HELO --> MAILFROM
         MAILFROM --> RCPT
         RCPT --> RAT
         RAT --> DATA : destination acceptée
@@ -47,11 +46,13 @@ rectangle "Cisco Secure Email Gateway / IronPort" {
         RAT ..> LDAP : si configuré
         LDAP ..> DATA : destinataire valide
 
-        MAILFROM ..> SPF : IP source + enveloppe
-        DATA ..> DKIM : message reçu
-        SPF --> DMARC : résultat SPF
-        DKIM --> DMARC : résultat DKIM
-        DATA ..> DMARC : domaine From:
+        MAILFROM ..> SPF : IP source + MAIL FROM
+        HELO ..> SPF : notamment si reverse-path nul
+        DATA ..> DKIM : signature + message
+        DATA ..> FROMHDR
+        SPF --> DMARC : résultat + domaine SPF
+        DKIM --> DMARC : résultat + d=
+        FROMHDR --> DMARC : domaine du From:
     }
 
     package "3. Work Queue" {
@@ -69,7 +70,7 @@ rectangle "Serveur de messagerie" {
 
 Internet --> Listener
 Listener --> SG : évaluation du HAT
-MFP --> MAILFROM : session SMTP acceptée
+MFP --> HELO : session SMTP acceptée
 
 MFP ..> SPF : active selon politique
 MFP ..> DKIM : active selon politique
@@ -81,10 +82,16 @@ WQ --> ROUTING
 ROUTING --> MAILSERVER
 
 note right of MFP
-La Mail Flow Policy est choisie
-très tôt, mais les contrôles sont
-exécutés seulement lorsque les
-données nécessaires sont disponibles.
+La Mail Flow Policy est choisie très tôt.
+Elle décide quels contrôles seront appliqués,
+mais ceux-ci ne sont exécutés que lorsque
+les données nécessaires sont disponibles.
+end note
+
+note right of DMARC
+DMARC ne compare pas des adresses complètes.
+Il exige qu'au moins une identité SPF ou DKIM
+valide soit alignée avec le domaine du From:.
 end note
 
 @enduml

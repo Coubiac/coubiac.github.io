@@ -12,13 +12,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: plantuml-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   plantuml:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Graphviz
         run: |
@@ -30,7 +34,9 @@ jobs:
           PLANTUML_VERSION: 1.2026.8
           PLANTUML_SHA256: 5e1ecfa8ecd32c90b03bbf3b1eb6f020943f98ab0fcf4032be31a0002ee2c462
         run: |
-          curl -fsSL             "https://github.com/plantuml/plantuml/releases/download/v${PLANTUML_VERSION}/plantuml-${PLANTUML_VERSION}.jar"             -o /tmp/plantuml.jar
+          curl -fsSL \
+            "https://github.com/plantuml/plantuml/releases/download/v${PLANTUML_VERSION}/plantuml-${PLANTUML_VERSION}.jar" \
+            -o /tmp/plantuml.jar
           echo "${PLANTUML_SHA256}  /tmp/plantuml.jar" | sha256sum -c -
 
       - name: Generate SVG diagrams
@@ -58,4 +64,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore: regenerate PlantUML diagrams"
-          git push
+
+          # main may have moved while this workflow was running.
+          # Rebase the generated commit before pushing it.
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main

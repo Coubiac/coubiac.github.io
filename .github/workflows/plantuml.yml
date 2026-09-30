@@ -1,0 +1,61 @@
+name: Generate PlantUML diagrams
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'assets/diagrams/**/*.puml'
+      - '.github/workflows/plantuml.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  plantuml:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Graphviz
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y graphviz
+
+      - name: Download PlantUML
+        env:
+          PLANTUML_VERSION: 1.2026.8
+          PLANTUML_SHA256: 5e1ecfa8ecd32c90b03bbf3b1eb6f020943f98ab0fcf4032be31a0002ee2c462
+        run: |
+          curl -fsSL             "https://github.com/plantuml/plantuml/releases/download/v${PLANTUML_VERSION}/plantuml-${PLANTUML_VERSION}.jar"             -o /tmp/plantuml.jar
+          echo "${PLANTUML_SHA256}  /tmp/plantuml.jar" | sha256sum -c -
+
+      - name: Generate SVG diagrams
+        shell: bash
+        run: |
+          mapfile -d '' files < <(find assets/diagrams -type f -name '*.puml' -print0 | sort -z)
+
+          if (("${#files[@]}" == 0)); then
+            echo "No PlantUML source files found."
+            exit 0
+          fi
+
+          java -jar /tmp/plantuml.jar -charset UTF-8 -tsvg "${files[@]}"
+
+      - name: Commit generated SVG files
+        shell: bash
+        run: |
+          git add assets/diagrams
+
+          if git diff --cached --quiet; then
+            echo "No generated diagram changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: regenerate PlantUML diagrams"
+          git push

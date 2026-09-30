@@ -12,9 +12,13 @@ rectangle "Cisco Secure Email Gateway / IronPort" {
     component "Public Listener\nSMTP" as Listener
 
     package "Receipt - Réception SMTP" {
-        component "HAT\nHost Access Table" as HAT
-        component "Sender Group\nClassification de l'hôte SMTP" as SG
-        component "Talos / IP Reputation" as REP
+
+        rectangle "HAT\nHost Access Table" as HAT {
+            component "Critères du Sender Group\n\nIP / réseau\nHostname / domaine\nDNS List\nOrganisation\nTalos / IP Reputation" as HATCRIT
+            component "Sender Group\nClassification de l'hôte SMTP" as SG
+            HATCRIT --> SG : correspondance
+        }
+
         component "Mail Flow Policy\nTraitement de la connexion" as MFP
         component "MAIL FROM" as MAILFROM
         component "SPF" as SPF
@@ -40,9 +44,7 @@ rectangle "Serveur de messagerie" {
 }
 
 Internet --> Listener
-Listener --> HAT
-HAT --> SG
-REP --> SG
+Listener --> SG : évaluation HAT
 SG --> MFP
 MFP --> MAILFROM
 MAILFROM --> RCPT

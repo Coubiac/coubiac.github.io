@@ -1,51 +1,57 @@
 @startuml
-title SPF, DKIM et DMARC sur un mail entrant
+title SPF, DKIM et DMARC - enveloppe, message et alignement
 
 skinparam shadowing false
 skinparam linetype ortho
 skinparam componentStyle rectangle
 left to right direction
 
-rectangle "Connexion SMTP" {
+rectangle "Enveloppe / session SMTP" {
     component "IP source" as IP
-    component "MAIL FROM" as MAILFROM
+    component "EHLO / HELO" as HELO
+    component "MAIL FROM\nreverse-path" as MAILFROM
 }
 
-component "SPF" as SPF
+component "SPF\nAuthentifie une identité SMTP" as SPF
 
 rectangle "Message reçu via DATA" {
-    component "DKIM-Signature" as SIGN
+    component "DKIM-Signature\nd=signing.example.com" as SIGN
     component "Headers + Body" as BODY
-    component "From:" as HEADERFROM
+    component "From:\nuser@example.com" as HEADERFROM
 }
 
-component "DKIM" as DKIM
-component "DMARC" as DMARC
+component "DKIM\nVérifie la signature" as DKIM
+component "DMARC\nVérifie l'alignement" as DMARC
 
 IP --> SPF
 MAILFROM --> SPF
+HELO ..> SPF : utile notamment\nsi MAIL FROM:<>
 
 SIGN --> DKIM
 BODY --> DKIM
 
-SPF --> DMARC : résultat SPF
-DKIM --> DMARC : résultat DKIM
-HEADERFROM --> DMARC : domaine visible
+SPF --> DMARC : SPF PASS + domaine authentifié
+DKIM --> DMARC : DKIM PASS + domaine d=
+HEADERFROM --> DMARC : Author Domain
 
 note bottom of SPF
-Peut être évalué relativement tôt :
-l'IP source et l'identité d'enveloppe
-sont déjà disponibles.
+SPF porte principalement sur l'identité
+RFC5321.MailFrom. Avec un reverse-path nul,
+SPF définit l'identité à partir de HELO/EHLO.
 end note
 
 note bottom of DKIM
-Nécessite les données du message
-et la signature DKIM.
+DKIM nécessite le message et sa signature :
+il ne peut pas être validé au simple
+établissement de la connexion TCP.
 end note
 
 note bottom of DMARC
-Évalue notamment l'alignement
-avec le domaine du From:.
+DMARC passe si SPF OU DKIM est valide
+et aligné avec le domaine du From:.
+
+Relaxed : même Organizational Domain.
+Strict : domaines identiques.
 end note
 
 @enduml

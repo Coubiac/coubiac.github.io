@@ -27,7 +27,68 @@ Cisco présente le pipeline autour de trois grandes phases :
 
 Le parcours général peut être résumé ainsi :
 
-![Parcours d'un mail entrant dans Cisco Secure Email Gateway](/assets/diagrams/ironport-mail-entrant-pipeline.svg)
+~~~text
+Internet
+   |
+   v
+Public Listener SMTP
+   |
+   v
+HAT
+   |
+   +--> IP / réseau / hostname / DNS List
+   +--> Talos / IP Reputation
+   |
+   v
+Sender Group
+   |
+   v
+Mail Flow Policy
+   |
+   |  décide quels contrôles seront appliqués
+   |
+   v
+EHLO / HELO
+   |
+   v
+MAIL FROM
+   |
+   +--------> SPF peut déjà être évalué
+   |
+   v
+RCPT TO
+   |
+   v
+RAT
+   |
+   +--------> LDAP Recipient Acceptance éventuel
+   |
+   v
+DATA
+   |
+   +--------> DKIM devient vérifiable
+   |
+   +--------> From: devient disponible
+   |
+   +--------> DMARC peut évaluer l'alignement
+   |
+   v
+Work Queue
+   |
+   +--> Message Filters
+   +--> Mail Policies
+   +--> Anti-Spam
+   +--> Anti-Virus
+   +--> File Reputation / Analysis
+   +--> Content Filters
+   +--> Outbreak Filters
+   |
+   v
+SMTP Routing
+   |
+   v
+Exchange / autre MTA
+~~~
 
 Il ne faut cependant pas lire ce schéma comme une trace CPU exacte. Certaines fonctions sont **activées très tôt dans la configuration**, mais ne peuvent être réellement exécutées que plus tard, lorsque les données nécessaires ont été reçues.
 
@@ -329,7 +390,54 @@ Sans ce contrôle, une passerelle pourrait accepter un message venant d'un tiers
 
 La différence entre HAT et RAT peut être résumée ainsi :
 
-![Différence entre HAT et RAT dans Cisco Secure Email Gateway](/assets/diagrams/ironport-hat-rat.svg)
+~~~text
+Serveur SMTP distant
+IP : 203.0.113.25
+        |
+        v
+     Listener
+        |
+        v
+       HAT
+        |
+        | "Qui vient me parler ?"
+        |
+        +--> IP / réseau
+        +--> hostname / domaine
+        +--> Talos / réputation
+        |
+        v
+   Sender Group
+        |
+        | "Dans quelle catégorie ?"
+        v
+Mail Flow Policy
+        |
+        | "Comment traiter cette catégorie ?"
+        v
+     RCPT TO
+        |
+        v
+       RAT
+        |
+        | "Est-ce une destination que j'accepte ?"
+        |
+        +---- NON ----> REJECT
+        |
+       OUI
+        |
+        v
+LDAP Recipient Acceptance
+        |
+        | "Ce destinataire existe-t-il ?"
+        |
+        +---- NON ----> REJECT
+        |
+       OUI
+        |
+        v
+       DATA
+~~~
 
 > **HAT : qui se connecte ?**
 
@@ -490,7 +598,37 @@ DMARC utilise le domaine visible dans le header **From:**, appelé Author Domain
 
 Le schéma suivant résume les relations :
 
-![SPF, DKIM et DMARC : enveloppe, message et alignement](/assets/diagrams/ironport-spf-dkim-dmarc.svg)
+~~~text
+                 ENVELOPPE SMTP
+
+IP source --------------------+
+                              |
+MAIL FROM:<bounce@...> ------> SPF
+                              |
+                              | résultat SPF
+                              v
+                         +---------+
+                         |         |
+                         |  DMARC  | <------- From: user@example.com
+                         |         |          domaine visible
+                         +---------+
+                              ^
+                              | résultat DKIM
+                              |
+DKIM-Signature: d=... ------> DKIM
+                              ^
+                              |
+                        Headers + Body
+                           reçus via DATA
+
+
+DMARC vérifie que SPF OU DKIM :
+  1. passe correctement ;
+  2. est aligné avec le domaine du From:.
+
+Mode relaxed : même Organizational Domain.
+Mode strict  : domaine identique.
+~~~
 
 DMARC ne demande pas que SPF **et** DKIM soient tous les deux valides.
 

@@ -696,6 +696,70 @@ Get-Mailbox "alice" |
     Format-List Name,AddressBookPolicy
 ```
 
+### Attribution de l'ABP : l'OU ne suffit pas
+
+C'est un piège classique du provisioning Exchange : **créer une boîte dans la bonne unité d'organisation Active Directory n'attribue pas automatiquement la politique de carnet d'adresses correspondante**.
+
+Il faut distinguer trois éléments :
+
+- L'**OU Active Directory** classe les objets et peut servir à les sélectionner dans une commande ou dans certains filtres.
+- La **GAL** et les Address Lists définissent quels destinataires correspondent à leurs filtres, par exemple `CustomAttribute2 = Filiale`.
+- L'**ABP** est une propriété **de chaque boîte aux lettres utilisatrice**, attribuée séparément via `AddressBookPolicy`.
+
+Un compte situé dans `contoso.example/Filiale` et présent dans `GAL-Filiale` peut donc parfaitement afficher :
+
+```text
+Name              : alice
+CustomAttribute2  : Filiale
+AddressBookPolicy :
+```
+
+Dans ce cas, **Alice ne reçoit pas automatiquement `ABP-Filiale`**. En l'absence d'ABP, elle peut continuer à voir le carnet global de l'organisation dans Outlook. C'est une conséquence opérationnelle importante dans un environnement où plusieurs filiales partagent la même organisation Exchange.
+
+#### Prévoir l'ABP au moment du provisioning
+
+Pour un compte AD déjà existant, `Enable-Mailbox` accepte directement `-AddressBookPolicy` :
+
+```powershell
+Enable-Mailbox -Identity "alice" `
+    -Database "DB-Filiale" `
+    -AddressBookPolicy "ABP-Filiale"
+```
+
+La cmdlet `New-Mailbox` accepte également le paramètre `-AddressBookPolicy` lors de la création simultanée du compte et de sa boîte.
+
+Pour mettre en conformité les boîtes déjà existantes d'une OU :
+
+```powershell
+Get-Mailbox -OrganizationalUnit "contoso.example/Filiale" -ResultSize Unlimited |
+    Set-Mailbox -AddressBookPolicy "ABP-Filiale"
+```
+
+Cette commande affecte la politique à **toutes les boîtes retournées**, y compris celles qui avaient déjà une autre ABP. Il faut vérifier le périmètre avant de l'exécuter, particulièrement dans une arborescence contenant des boîtes de ressources ou des boîtes partagées.
+
+#### Détecter les utilisateurs oubliés
+
+Pour identifier les **boîtes utilisateur** de la filiale qui n'ont aucune ABP :
+
+```powershell
+Get-Mailbox -OrganizationalUnit "contoso.example/Filiale" -ResultSize Unlimited |
+    Where-Object {
+        $_.RecipientTypeDetails -eq "UserMailbox" -and
+        $null -eq $_.AddressBookPolicy
+    } |
+    Format-Table Name,PrimarySmtpAddress,AddressBookPolicy
+```
+
+Attention : ce contrôle ne signale pas une boîte ayant **une mauvaise ABP**, seulement celles qui n'en ont aucune. Pour auditer l'ensemble des affectations :
+
+```powershell
+Get-Mailbox -OrganizationalUnit "contoso.example/Filiale" -ResultSize Unlimited |
+    Where-Object { $_.RecipientTypeDetails -eq "UserMailbox" } |
+    Format-Table Name,CustomAttribute2,AddressBookPolicy
+```
+
+L'attribution peut être intégrée à un script de création de boîte ou vérifiée par un traitement périodique. **Exchange ne surveille pas automatiquement une OU pour lui appliquer une ABP** : l'administrateur doit prévoir ce mécanisme de provisioning.
+
 ### Les limites d'une ABP
 
 La segmentation par ABP est **une séparation de présentation des destinataires**, pas une frontière de sécurité. Une ABP n'empêche pas en soi d'envoyer un message à une adresse connue, et ne fournit pas un cloisonnement juridique ou administratif de deux entités.
@@ -763,6 +827,8 @@ Ces composants peuvent être assemblés dans une seule organisation Exchange pou
 - [Set-Mailbox : propriétés EmailAddresses et PrimarySmtpAddress](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/set-mailbox)
 - [Primary SMTP address overwritten by targetAddress](https://learn.microsoft.com/en-us/troubleshoot/exchange/administration/primary-smtp-address-is-overwritten-by-targetaddress)
 - [Address book policies in Exchange Server](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/address-book-policies/address-book-policies)
+- [Attribuer une Address Book Policy dans Exchange Server](https://learn.microsoft.com/fr-fr/exchange/email-addresses-and-address-books/address-book-policies/abp-procedures)
+- [Enable-Mailbox : paramètre AddressBookPolicy](https://learn.microsoft.com/fr-fr/powershell/module/exchangepowershell/enable-mailbox)
 - [Set-OfflineAddressBook](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/set-offlineaddressbook)
 - [Offline address books in Exchange Server](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/offline-address-books/offline-address-books)
 - [OAB procedures and organization mailboxes](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/offline-address-books/oab-procedures)

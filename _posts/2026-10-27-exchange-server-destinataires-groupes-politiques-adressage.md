@@ -596,6 +596,50 @@ En pratique, avant de supprimer une base ou de décommissionner un serveur, il f
 
 La gestion des OAB se réalise dans **Exchange Management Shell**, et non dans l'EAC : `Get-OfflineAddressBook`, `New-OfflineAddressBook`, `Set-OfflineAddressBook` et `Update-OfflineAddressBook` sont les commandes à retenir.
 
+### Dépannage : Send As et Send on Behalf avec un OAB obsolète
+
+Une délégation peut sembler incorrecte dans Outlook **alors que les autorisations sont bien présentes côté Exchange**. C'est notamment possible avec les droits **Send As** (envoyer en tant que) et **Send on Behalf** (envoyer de la part de), lorsqu'Outlook classique en mode Exchange mis en cache travaille avec un carnet d'adresses hors connexion ou une entrée d'autocomplétion obsolète.
+
+Prenons une boîte `direction@contoso.example` sur laquelle Alice dispose du droit `Send As`. Exchange contrôle ce droit côté serveur : **l'OAB ne contient pas les permissions de délégation**. En revanche, Outlook utilise des données d'annuaire pour résoudre l'expéditeur choisi dans le champ **De**. Si celles-ci renvoient à une identité ancienne ou incorrecte, l'envoi peut échouer avec un message laissant penser à une absence de permission.
+
+Microsoft documente explicitement ce scénario pour **Send As dans Exchange Online** : l'envoi échoue dans Outlook mais réussit dans Outlook sur le Web, à cause d'informations locales périmées. Le mécanisme de résolution par OAB existe également dans Exchange Server on-premises, même si ce symptôme ne se produit pas systématiquement. Pour **Send on Behalf**, une résolution obsolète peut aussi être une piste, mais il ne faut pas conclure automatiquement que l'OAB est responsable.
+
+#### Distinguer un défaut de permission d'un problème de résolution
+
+Sur Exchange Server on-premises, on commence par examiner les droits de la boîte représentée :
+
+```powershell
+# Send As : droit étendu dans Active Directory
+Get-ADPermission -Identity "direction" -User "alice" |
+    Where-Object { $_.ExtendedRights -like "*Send-As*" } |
+    Format-Table User,Deny,ExtendedRights
+
+# Send on Behalf : propriété de la boîte représentée
+Get-Mailbox "direction" |
+    Format-List GrantSendOnBehalfTo
+
+# Vérifier la visibilité de la boîte dans les carnets
+Get-Mailbox "direction" |
+    Format-List HiddenFromAddressListsEnabled
+```
+
+L'absence d'un droit dans cette vérification ne suffit pas toujours à conclure : il faut aussi considérer une **délégation accordée via un groupe**, les refus explicites et la propagation des changements.
+
+Si les permissions semblent correctes, effectuer le même test dans **Outlook sur le Web** peut aider à isoler un problème propre au client Outlook classique.
+
+#### Rafraîchir la résolution dans Outlook
+
+1. Dans le message, supprimer l'ancienne entrée du champ **De**.
+2. Choisir **De > Autre adresse de courrier > De**, puis sélectionner à nouveau le destinataire depuis la GAL, plutôt que de réutiliser une suggestion mémorisée.
+3. Dans Outlook classique : **Envoyer/Recevoir > Groupes d'envoi/réception > Télécharger le carnet d'adresses**. Décocher **Télécharger les modifications depuis le dernier envoi/réception** pour forcer un téléchargement complet.
+4. Si les modifications ne sont pas encore présentes dans l'OAB côté Exchange, déclencher sa génération puis retester après le téléchargement client :
+
+```powershell
+Update-OfflineAddressBook -Identity "OAB-Filiale"
+```
+
+**À retenir :** actualiser l'OAB *sur le serveur* et le *télécharger dans Outlook* sont deux opérations différentes. Un OAB ancien peut perturber l'utilisation d'une délégation, mais **il ne supprime pas le droit** et **n'empêche pas systématiquement Send As ou Send on Behalf de fonctionner**.
+
 ## 9. Address Book Policy : segmenter la visibilité des carnets
 
 Une ABP rassemble obligatoirement : **une GAL, un OAB, une liste de salles et une ou plusieurs Address Lists**.
@@ -724,3 +768,6 @@ Ces composants peuvent être assemblés dans une seule organisation Exchange pou
 - [OAB procedures and organization mailboxes](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/offline-address-books/oab-procedures)
 - [Re-create missing arbitration mailboxes](https://learn.microsoft.com/en-us/exchange/architecture/mailbox-servers/recreate-arbitration-mailboxes)
 - [Message tracking: moderation events](https://learn.microsoft.com/en-us/exchange/mail-flow/transport-logs/message-tracking)
+- [Send As : échec dans Outlook dû à des informations locales obsolètes (cas Exchange Online)](https://support.microsoft.com/en-us/outlook/a-user-who-has-send-as-permission-can-t-send-email-messages-as-another-user-account-in-outlook-in-of)
+- [Outlook : résolution des noms et fichiers OAB locaux](https://learn.microsoft.com/en-us/troubleshoot/outlook/performance/outlook-may-be-slower-to-resolve-names)
+- [Administration du carnet d'adresses hors connexion dans Outlook](https://support.microsoft.com/fr-fr/outlook/administering-the-offline-address-book-in-outlook)

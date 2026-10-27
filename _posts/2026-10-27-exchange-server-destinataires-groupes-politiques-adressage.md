@@ -147,6 +147,8 @@ Un groupe peut imposer des règles d'adhésion :
 
 Les possibilités de quitter un groupe se configurent séparément. Elles ne sont pas des règles d'autorisation d'envoi : les restrictions sur les expéditeurs constituent un autre ensemble de paramètres.
 
+Il ne faut pas non plus confondre **approbation d'une demande d'adhésion** et **modération des messages**. Dans le premier cas, un propriétaire décide qui peut rejoindre le groupe. Dans le second, un modérateur approuve ou refuse un e-mail *avant sa distribution*. Exchange utilise alors une boîte d'arbitrage pour conserver le message en attente, comme nous le verrons avec les boîtes système.
+
 ```powershell
 Get-DistributionGroup "DG-Filiale-Managers" |
     Format-List MemberJoinRestriction,MemberDepartRestriction,ManagedBy
@@ -450,6 +452,70 @@ Update-OfflineAddressBook -Identity "OAB-Filiale"
 
 Pour Exchange Server moderne, Microsoft recommande la **distribution Web globale** plutôt que l'énumération manuelle des répertoires virtuels OAB de chaque serveur. Outlook récupère l'OAB via les mécanismes Exchange et Autodiscover ; une génération ou un téléchargement retardé peut expliquer un décalage entre Outlook en ligne et Outlook en cache.
 
+
+### Qui génère l'OAB ? Les boîtes aux lettres d'arbitrage
+
+Une **boîte aux lettres d'arbitrage** (*arbitration mailbox*) est une boîte aux lettres système d'Exchange. Elle possède un objet Active Directory et réside dans une base de boîtes aux lettres Exchange, au même titre qu'une boîte utilisateur, mais elle n'est pas destinée à être ouverte dans Outlook.
+
+Ces boîtes servent à stocker des informations nécessaires au fonctionnement interne d'Exchange. Plusieurs fonctionnalités les utilisent :
+
+| Fonction | Utilisation d'une boîte d'arbitrage |
+|---|---|
+| **Génération des OAB** | Hébergement des données et fichiers utilisés pour construire les carnets hors connexion |
+| **Modération des messages** | Stockage temporaire des messages attendant l'approbation d'un modérateur |
+| **Migrations par lots** | Stockage d'informations exploitées par le service de migration Exchange |
+| **Fédération** | Données utiles à la communication et à certains échanges entre organisations |
+| **eDiscovery** | Stockage de données système liées aux fonctions de découverte et de conformité |
+
+**Toutes les boîtes d'arbitrage n'ont pas toutes ces fonctions.** Certaines sont spécialisées, et leurs capacités sont enregistrées dans les propriétés `PersistedCapabilities`. Les rôles disponibles dépendent aussi de la version d'Exchange.
+
+Pour l'OAB, Exchange s'appuie sur une boîte d'arbitrage particulière appelée **Organization Mailbox**, dotée de la capacité `OrganizationCapabilityOABGen`. L'Organization Mailbox créée par défaut s'appelle généralement :
+
+`SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}`
+
+Le service **Microsoft Exchange Mailbox Assistants** héberge l'assistant `OABGeneratorAssistant`, qui exécute la génération. La boîte d'arbitrage n'est donc pas un processus autonome : elle fournit l'emplacement et le contexte de stockage nécessaires à cet assistant.
+
+```mermaid
+flowchart TD
+    A["GAL / Address Lists"] --> B["OABGeneratorAssistant"]
+    C["Organization Mailbox<br/>Boîte d'arbitrage OABGen"] --- B
+    B --> D["Fichiers OAB générés"]
+    D --> E["Distribution HTTP(S) via Exchange"]
+    E --> F["Outlook en mode cache"]
+```
+
+Pour inventorier les boîtes système :
+
+```powershell
+Get-Mailbox -Arbitration |
+    Format-Table Name,Database,ServerName
+```
+
+Pour identifier celles autorisées à générer les carnets hors connexion :
+
+```powershell
+Get-Mailbox -Arbitration |
+    Where-Object {
+        $_.PersistedCapabilities -contains "OrganizationCapabilityOABGen"
+    } |
+    Format-Table Name,Database,ServerName
+```
+
+Et pour vérifier à quelle Organization Mailbox un OAB est associé :
+
+```powershell
+Get-OfflineAddressBook |
+    Format-List Name,AddressLists,GeneratingMailbox,IsDefault
+```
+
+La **modération** illustre un autre usage concret : quand un message est adressé à un groupe modéré, Exchange conserve temporairement le message original dans une boîte d'arbitrage et transmet une demande d'approbation au modérateur. Si celui-ci accepte, la distribution reprend ; s'il refuse, le message n'est pas remis aux destinataires prévus. Il ne faut pas confondre ce mécanisme avec les délégués de réservation d'une salle, ni avec les restrictions d'adhésion à un groupe.
+
+Enfin, ces boîtes comptent aussi dans l'exploitation des **DAG**. Une Organization Mailbox est stockée dans une base Exchange ; si cette base dispose de copies dans un DAG, elle peut profiter de la disponibilité de ces copies. La génération de l'OAB est alors prise en charge sur le serveur hébergeant la copie active de sa base. L'accès HTTP aux fichiers OAB est relayé par les services Exchange vers l'emplacement approprié.
+
+En pratique, avant de supprimer une base ou de décommissionner un serveur, il faut inventorier **les boîtes système aussi bien que les boîtes utilisateur**. Une boîte d'arbitrage manquante, déplacée dans une base indisponible ou mal configurée peut notamment perturber la génération des OAB, les migrations ou la modération.
+
+La gestion des OAB se réalise dans **Exchange Management Shell**, et non dans l'EAC : `Get-OfflineAddressBook`, `New-OfflineAddressBook`, `Set-OfflineAddressBook` et `Update-OfflineAddressBook` sont les commandes à retenir.
+
 ## 9. Address Book Policy : segmenter la visibilité des carnets
 
 Une ABP rassemble obligatoirement : **une GAL, un OAB, une liste de salles et une ou plusieurs Address Lists**.
@@ -571,3 +637,7 @@ Ces composants peuvent être assemblés dans une seule organisation Exchange pou
 - [Email address policies in Exchange Server](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/email-address-policies/email-address-policies)
 - [Address book policies in Exchange Server](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/address-book-policies/address-book-policies)
 - [Set-OfflineAddressBook](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/set-offlineaddressbook)
+- [Offline address books in Exchange Server](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/offline-address-books/offline-address-books)
+- [OAB procedures and organization mailboxes](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/offline-address-books/oab-procedures)
+- [Re-create missing arbitration mailboxes](https://learn.microsoft.com/en-us/exchange/architecture/mailbox-servers/recreate-arbitration-mailboxes)
+- [Message tracking: moderation events](https://learn.microsoft.com/en-us/exchange/mail-flow/transport-logs/message-tracking)

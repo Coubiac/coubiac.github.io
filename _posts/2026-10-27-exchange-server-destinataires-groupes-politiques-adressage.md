@@ -376,6 +376,86 @@ Une EAP ne reconfigure pas le routage SMTP. Elle attribue des adresses aux desti
 
 Si `EmailAddressPolicyEnabled` vaut `$false` pour une boîte, celle-ci ne suit plus automatiquement les modèles de la politique : c'est notamment à vérifier en cas d'adresse gérée manuellement.
 
+### Comprendre l'attribut AD `proxyAddresses`
+
+Lorsqu'on consulte les propriétés d'un utilisateur dans **Active Directory Users and Computers** (avec l'affichage des fonctionnalités avancées et l'éditeur d'attributs), on retrouve les adresses Exchange dans l'attribut **`proxyAddresses`**.
+
+Il s'agit d'un attribut **multivalué** : il contient plusieurs adresses pour un même destinataire. Par exemple :
+
+```text
+SMTP:alice.martin@filiale.example
+smtp:alice.martin@contoso.example
+smtp:a.martin@filiale.example
+X500:/o=Contoso/ou=Exchange Administrative Group/cn=Recipients/cn=AliceMartin
+```
+
+La distinction essentielle porte sur **la casse du préfixe** :
+
+| Valeur | Signification |
+|---|---|
+| `SMTP:` | Adresse SMTP principale, unique pour le destinataire |
+| `smtp:` | Adresse SMTP secondaire (alias de réception), plusieurs possibles |
+| `X500:` | Adresse héritée liée à l'identité Exchange, notamment utile après une migration |
+
+Les messages envoyés aux différentes adresses SMTP sont remis à la **même boîte aux lettres**. L'adresse principale est celle qu'Exchange utilise normalement comme adresse d'expéditeur par défaut. Ce n'est pas un en-tête `Reply-To:` forcé : un client ou une application peut définir ce dernier séparément.
+
+Ce n'est donc pas la casse de `alice.martin` ou du nom de domaine qui indique l'adresse principale, mais bien **`SMTP:` (majuscules) ou `smtp:` (minuscules)**.
+
+#### Vérifier l'attribut depuis Active Directory et Exchange
+
+Pour comparer la représentation dans Active Directory et les propriétés exposées par Exchange :
+
+```powershell
+# Lecture directe dans Active Directory
+Get-ADUser "alice" -Properties proxyAddresses,mail,mailNickname,userPrincipalName |
+    Format-List Name,proxyAddresses,mail,mailNickname,userPrincipalName
+
+# Lecture via Exchange Management Shell
+Get-Mailbox "alice" |
+    Format-List PrimarySmtpAddress,EmailAddresses,EmailAddressPolicyEnabled
+```
+
+On trouve également plusieurs attributs AD qu'il ne faut pas confondre :
+
+| Attribut AD | Rôle |
+|---|---|
+| `proxyAddresses` | Ensemble des adresses de messagerie (SMTP, X500, etc.) |
+| `mail` | Adresse électronique renseignée dans l'annuaire, généralement l'adresse principale, mais ce n'est pas le mécanisme qui détermine le préfixe `SMTP:` |
+| `mailNickname` | Alias Exchange |
+| `userPrincipalName` | Identifiant de connexion AD, qui peut être différent de l'adresse e-mail |
+| `targetAddress` | Adresse de destination/routage externe pour certains destinataires comme les Mail Users ou Remote Mailboxes |
+
+#### Ajouter un alias ou changer l'adresse principale
+
+Pour **ajouter une adresse secondaire** sans effacer les entrées existantes :
+
+```powershell
+Set-Mailbox "alice" -EmailAddresses @{
+    Add = "smtp:alice.martin@ancien-domaine.example"
+}
+```
+
+Le point important est la syntaxe `@{Add=...}`, qui ajoute une valeur à une propriété multivaluée. En revanche, affecter directement une nouvelle liste avec `-EmailAddresses "SMTP:...","smtp:..."` **remplace l'ensemble des entrées existantes** : celles qui ne sont pas reprises risquent de disparaître.
+
+Pour changer ponctuellement l'adresse principale d'une boîte **gérée manuellement**, il faut d'abord tenir compte de la politique d'adresses :
+
+```powershell
+Set-Mailbox "alice" -EmailAddressPolicyEnabled $false
+
+Set-Mailbox "alice" -PrimarySmtpAddress "alice.martin@nouveau-domaine.example"
+```
+
+Désactiver `EmailAddressPolicyEnabled` constitue un choix d'administration : la boîte ne recevra plus les mises à jour automatiques des modèles d'adresse. Si le changement concerne toute une population, mieux vaut modifier et appliquer l'**Email Address Policy** appropriée.
+
+#### Pourquoi ne pas modifier `proxyAddresses` directement dans AD ?
+
+Techniquement, on peut modifier cet attribut dans les outils AD, mais **les cmdlets Exchange restent la méthode normale d'administration**. Elles effectuent les validations Exchange et permettent de gérer les politiques d'adresses. Une modification directe dans AD peut laisser des propriétés incohérentes ou entrer en conflit avec une mise à jour de politique.
+
+Un cas piégeux concerne `targetAddress` : Microsoft documente qu'un `targetAddress` commençant par **`SMTP:` en majuscules** peut remplacer l'adresse SMTP principale dans `proxyAddresses` lors de l'application d'une politique d'adresses. La casse du préfixe mérite donc une attention particulière, aussi sur cet attribut.
+
+Enfin, **ne supprime pas les adresses `X500:` par simple nettoyage**. Elles peuvent préserver la résolution des anciens destinataires, notamment lors de réponses à des messages historiques ou d'une migration de boîte. Leur disparition peut entraîner des erreurs de remise liées à d'anciens identifiants Exchange.
+
+
 ## 8. GAL, Address List et OAB : trois notions différentes
 
 On utilise fréquemment le terme « carnet d'adresses » pour désigner des objets Exchange distincts.
@@ -635,6 +715,9 @@ Ces composants peuvent être assemblés dans une seule organisation Exchange pou
 - [Public folders in Exchange Server](https://learn.microsoft.com/en-us/exchange/collaboration/public-folders/public-folders)
 - [Accepted domains in Exchange Server](https://learn.microsoft.com/en-us/exchange/mail-flow/accepted-domains/accepted-domains)
 - [Email address policies in Exchange Server](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/email-address-policies/email-address-policies)
+- [Add or remove email addresses for a mailbox](https://learn.microsoft.com/en-us/exchange/recipients/user-mailboxes/email-addresses)
+- [Set-Mailbox : propriétés EmailAddresses et PrimarySmtpAddress](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/set-mailbox)
+- [Primary SMTP address overwritten by targetAddress](https://learn.microsoft.com/en-us/troubleshoot/exchange/administration/primary-smtp-address-is-overwritten-by-targetaddress)
 - [Address book policies in Exchange Server](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/address-book-policies/address-book-policies)
 - [Set-OfflineAddressBook](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/set-offlineaddressbook)
 - [Offline address books in Exchange Server](https://learn.microsoft.com/en-us/exchange/email-addresses-and-address-books/offline-address-books/offline-address-books)

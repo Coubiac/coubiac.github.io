@@ -35,6 +35,10 @@ La perte d'un serveur Exchange peut être absorbée. Mais si le seul load balanc
 
 La même question se pose pour les commutateurs, les pare-feu, le DNS, Active Directory, les liens WAN, les passerelles SMTP et l'alimentation électrique.
 
+![Avertissement de l'appliance sur l'absence de redondance du répartiteur](/assets/images/exchange-ha-lab6/09-loadbalancer-backends-indisponibles.jpg)
+
+*Dans le laboratoire, l'interface du répartiteur signale explicitement « Cluster: Not configured ». Le fait d'avoir plusieurs serveurs Exchange derrière lui ne supprime pas ce point de défaillance unique. Les indicateurs de santé montrés ne suffisent pas, à eux seuls, à prouver que le service OWA fonctionne.*
+
 Il ne s'agit pas de tout doubler sans discernement. Il faut d'abord définir le niveau de service attendu, les scénarios de panne à couvrir, le **RTO** (temps maximal de reprise acceptable) et le **RPO** (perte de données maximale acceptable). Le coût de la protection doit être comparé au coût d'une indisponibilité.
 
 ## Première couche : le DAG protège les bases, pas toute la messagerie
@@ -169,6 +173,10 @@ Le witness est généralement un **serveur Windows membre du domaine, extérieur
 
 Pour une architecture répartie entre deux datacenters, Microsoft préconise de placer le witness dans un **troisième emplacement indépendant**, lorsqu'il existe, afin de favoriser la continuité après la perte de l'un des deux datacenters.
 
+![Deux membres Exchange et leur serveur témoin dans le DAG DAG1](/assets/images/exchange-ha-lab6/02-membres-dag1-eac.jpg)
+
+*Dans l'ancien EAC, le DAG `DAG1` regroupe `LON-EX1` et `LON-EX2`, avec un witness distinct. Le contrôleur de domaine est utilisé comme témoin uniquement pour les besoins de cette maquette ; ce n'est pas le choix à reproduire systématiquement en production.*
+
 ### Le point d'accès administratif du cluster : une IP dont Exchange peut se passer
 
 Un DAG Exchange s'appuie sur **Windows Server Failover Clustering**, mais cela ne signifie pas que les clients ou les administrateurs Exchange doivent se connecter à un nom de cluster.
@@ -247,6 +255,14 @@ Deux défaillances très différentes peuvent se produire :
 - **EXCH02 tombe entièrement.** Active Manager doit pouvoir monter une copie saine de DB01 sur EXCH01, et les connexions clientes doivent rejoindre un point d'entrée encore disponible. Le basculement de la base et la reprise de l'accès client sont deux opérations distinctes.
 
 C'est précisément ce que les simulations de panne permettent de comprendre : **la disponibilité de la base n'implique pas automatiquement la disponibilité des services**, et inversement. Pour valider une architecture, il faut tester chaque couche et une panne combinée, pas simplement constater que deux serveurs sont allumés.
+
+![Base active sur LON-EX1 et seconde copie en cours de resynchronisation sur LON-EX2](/assets/images/exchange-ha-lab6/03-copies-base-dag1-eac.jpg)
+
+*Avant le basculement : `Mailbox Database 1` est active et montée sur `LON-EX1`. La copie de `LON-EX2` apparaît ici en cours de resynchronisation : elle ne doit pas être assimilée à une copie déjà saine.*
+
+![Mailbox Database 1 désormais active sur LON-EX2](/assets/images/exchange-ha-lab6/04-copies-montees-saines.jpg)
+
+*Après le basculement volontaire : le serveur actif indiqué pour `Mailbox Database 1` est maintenant `LON-EX2`. Le nom de la base ne change pas ; c'est l'emplacement de sa copie active qui change. Cette capture ne prouve pas, à elle seule, la santé des autres copies.*
 
 ## Une première boîte à outils pour l'exploitation
 

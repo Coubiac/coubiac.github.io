@@ -176,6 +176,8 @@ Une **Linked Mailbox ne nécessite pas deux organisations Exchange**. C'est souv
 
 **À retenir :** *compte actif dans la forêt de comptes ; objet désactivé et boîte dans la forêt Exchange ; relation d'approbation ; lien d'identité ; une seule boîte à lettres*.
 
+Pour comparer cette architecture aux autres options après un rachat d'entreprise (coexistence de deux Exchange, domaine SMTP partagé, déplacement inter-forêts et fusion complète), voir [Exchange Server : intégrer la messagerie après le rachat d'une entreprise](/articles/exchange-fusion-acquisition-coexistence-migration-linked-mailboxes/).
+
 ### Activer une boîte pour un compte existant
 
 La cmdlet `Enable-Mailbox` associe une boîte Exchange à un utilisateur AD existant. Elle ne crée pas le compte utilisateur :

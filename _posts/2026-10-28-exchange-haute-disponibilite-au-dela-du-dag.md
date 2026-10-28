@@ -11,35 +11,13 @@ published: false
 
 Quand on parle de haute disponibilité dans Exchange Server, on pense immédiatement aux **DAG** (*Database Availability Groups*). C'est logique : ils permettent de conserver plusieurs copies des bases de données et de basculer sur une copie saine en cas de défaillance.
 
-Mais une base parfaitement répliquée ne suffit pas à rendre une messagerie disponible. Si les clients ne peuvent plus se connecter, si un équipement réseau constitue un point de défaillance unique ou si les messages se perdent avant leur remise, l'utilisateur subit malgré tout une interruption.
+Mais une base parfaitement répliquée ne suffit pas à garantir le service de messagerie. Un utilisateur peut ne plus accéder à OWA alors que sa base est disponible ; inversement, une connexion HTTPS opérationnelle ne garantit pas qu'une copie saine de sa base puisse être montée. Le transport SMTP possède lui aussi ses propres mécanismes de résilience.
 
 La haute disponibilité Exchange repose donc sur plusieurs mécanismes complémentaires : **disponibilité des bases**, **accès client**, **transport des messages** et **résilience des sites**.
 
 Cet article prolonge [Comprendre le fonctionnement d'un DAG](/articles/comprendre-fonctionnement-dag-exchange-server/), sans reprendre tous les détails de son fonctionnement. La configuration des URL, des certificats et d'Autodiscover est abordée séparément dans [Comprendre les accès clients, Autodiscover, MAPI/HTTP, OWA et ActiveSync](/articles/exchange-server-comprendre-acces-clients-autodiscover-certificats-mapi-owa-activesync/).
 
 > **Versions :** les exemples de formation utilisent Exchange Server 2019. En octobre 2026, Exchange Server 2016 et 2019 ont dépassé leur date de fin de support (14 octobre 2025). Pour une infrastructure on-premises maintenue, Exchange Server Subscription Edition (SE) est désormais la version de référence. Les principes décrits restent applicables à SE, sous réserve des évolutions documentées par Microsoft.
-
-## Commencer par traquer les points de défaillance uniques
-
-Imaginons deux serveurs Exchange dont toutes les bases sont répliquées. Les clients les joignent à travers un répartiteur de charge.
-
-```mermaid
-flowchart TB
-    C["Clients Outlook et OWA"] --> LB["Load balancer unique"]
-    LB --> E1["EXCH01"]
-    LB --> E2["EXCH02"]
-    E1 <-->|"DAG"| E2
-```
-
-La perte d'un serveur Exchange peut être absorbée. Mais si le seul load balancer tombe, les clients perdent leur point d'entrée. On a rendu la couche Exchange redondante tout en conservant un **SPOF** (*Single Point of Failure*) devant elle.
-
-La même question se pose pour les commutateurs, les pare-feu, le DNS, Active Directory, les liens WAN, les passerelles SMTP et l'alimentation électrique.
-
-![Avertissement de l'appliance sur l'absence de redondance du répartiteur](/assets/images/exchange-ha-lab6/09-loadbalancer-backends-indisponibles.jpg)
-
-*Dans le laboratoire, l'interface du répartiteur signale explicitement « Cluster: Not configured ». Le fait d'avoir plusieurs serveurs Exchange derrière lui ne supprime pas ce point de défaillance unique. Les indicateurs de santé montrés ne suffisent pas, à eux seuls, à prouver que le service OWA fonctionne.*
-
-Il ne s'agit pas de tout doubler sans discernement. Il faut d'abord définir le niveau de service attendu, les scénarios de panne à couvrir, le **RTO** (temps maximal de reprise acceptable) et le **RPO** (perte de données maximale acceptable). Le coût de la protection doit être comparé au coût d'une indisponibilité.
 
 ## Première couche : le DAG protège les bases, pas toute la messagerie
 
@@ -71,11 +49,19 @@ flowchart LR
 
 Le Block Mode réduit le décalage entre les copies et le risque de perdre les derniers journaux lors d'une panne. **Ce n'est toutefois pas une réplication synchrone au sens d'un accusé de réception de chaque écriture par toutes les copies** : le RPO réel dépend de l'état des copies et des conditions de basculement.
 
+![Etat des copies d'une base : active montée sur LON-EX1, passive encore en resynchronisation sur LON-EX2](/assets/images/exchange-ha-lab6/03-copies-base-dag1-eac.jpg)
+
+*Dans EAC, `Mailbox Database 1` a une copie active `Mounted` sur `LON-EX1`, tandis que sa copie passive sur `LON-EX2` est indiquée `Resynchronizing`. Disposer de deux copies ne signifie donc pas qu'elles sont toutes deux immédiatement prêtes à être activées.*
+
 ### Comment Exchange choisit-il une copie ?
 
 Lorsqu'une base active devient indisponible, Exchange recherche une copie éligible, récupère si possible les derniers journaux et applique ses critères de santé. `ActivationPreference` exprime un ordre souhaité, mais ne garantit pas que la copie correspondante sera systématiquement retenue.
 
 Autre paramètre déterminant : `AutoDatabaseMountDial`. Avec `BestAvailability`, Exchange peut accepter, sous certaines conditions, de monter une copie malgré un maximum de douze journaux manquants. `GoodAvailability` réduit ce seuil à six ; `Lossless` privilégie l'absence de perte de journaux. Ces paramètres matérialisent un arbitrage entre **reprise de service** et **risque de perte de données**.
+
+![La base Mailbox Database 1 est maintenant active sur LON-EX2](/assets/images/exchange-ha-lab6/04-copies-montees-saines.jpg)
+
+*Après un déplacement volontaire de la base, EAC indique `LON-EX2` comme serveur actif de `Mailbox Database 1`, alors qu'il indiquait `LON-EX1` sur la capture précédente. Le nom de la base reste identique. Cet écran ne renseigne pas à lui seul sur l'état des copies passives.*
 
 ## Deuxième couche : rendre les services d'accès client disponibles
 
@@ -90,7 +76,7 @@ flowchart LR
     F2 --> B
 ```
 
-Le répartiteur de charge distribue les connexions et doit éviter les serveurs dont le service concerné est défaillant. **La persistance de session n'est pas nécessaire** pour les services HTTP modernes d'Exchange 2016/2019.
+La couche d'accès client doit orienter les connexions vers un serveur capable de traiter le protocole demandé. **La persistance de session n'est pas nécessaire** pour les services HTTP modernes d'Exchange 2016/2019.
 
 ### Un service qui répond sur TCP/443 peut-il quand même être en panne ?
 
@@ -98,7 +84,7 @@ Prenons un serveur Exchange dont le site OWA dysfonctionne alors que MAPI/HTTP c
 
 Un contrôle plus pertinent doit distinguer **la disponibilité de la machine** de **la santé du service applicatif**. Selon la méthode utilisée, le répartiteur peut tester une connexion TCP, interroger un endpoint HTTP de santé ou tenir compte de l'état propre à chaque service. La distinction L4/L7 concerne principalement le traitement et l'orientation du trafic ; elle ne suffit pas, à elle seule, pour savoir quelles sondes un équipement sait effectuer.
 
-Ce qui importe pour Exchange, ce n'est ni la marque ni l'interface du répartiteur : c'est qu'un client puisse rejoindre un autre service Client Access sain, sans dépendre d'un point d'entrée unique.
+L'important pour Exchange est de ne pas confondre **port TCP ouvert** et **service applicatif disponible**. La répartition des connexions n'est ici qu'un moyen de présenter les services Client Access des différents membres.
 
 ### Managed Availability : un contrôle plus utile qu'un simple port 443 ouvert
 
@@ -256,13 +242,7 @@ Deux défaillances très différentes peuvent se produire :
 
 C'est précisément ce que les simulations de panne permettent de comprendre : **la disponibilité de la base n'implique pas automatiquement la disponibilité des services**, et inversement. Pour valider une architecture, il faut tester chaque couche et une panne combinée, pas simplement constater que deux serveurs sont allumés.
 
-![Base active sur LON-EX1 et seconde copie en cours de resynchronisation sur LON-EX2](/assets/images/exchange-ha-lab6/03-copies-base-dag1-eac.jpg)
 
-*Avant le basculement : `Mailbox Database 1` est active et montée sur `LON-EX1`. La copie de `LON-EX2` apparaît ici en cours de resynchronisation : elle ne doit pas être assimilée à une copie déjà saine.*
-
-![Mailbox Database 1 désormais active sur LON-EX2](/assets/images/exchange-ha-lab6/04-copies-montees-saines.jpg)
-
-*Après le basculement volontaire : le serveur actif indiqué pour `Mailbox Database 1` est maintenant `LON-EX2`. Le nom de la base ne change pas ; c'est l'emplacement de sa copie active qui change. Cette capture ne prouve pas, à elle seule, la santé des autres copies.*
 
 ## Une première boîte à outils pour l'exploitation
 
@@ -299,7 +279,7 @@ Get-TransportConfig |
 
 Ces commandes ne constituent pas une procédure de dépannage complète. Elles permettent de distinguer les problèmes de **copies de bases**, de **composants d'accès client** et de **transport** au lieu de considérer toute interruption comme une panne du DAG.
 
-Un contrôle de disponibilité utile doit également vérifier les éléments situés autour d'Exchange : DNS, Active Directory, équilibre des VIP, chemins SMTP, disponibilité des datacenters et infrastructure réseau.
+Le diagnostic Exchange doit recouper l'état des bases, de la réplication, des services Client Access, des files de transport et du quorum, avant de conclure sur la cause d'une interruption.
 
 ## Une lagged copy est-elle une sauvegarde ?
 
@@ -315,15 +295,15 @@ La disponibilité d'une messagerie dépend de plusieurs couches qu'il faut conce
 
 ```mermaid
 flowchart TB
-    U["Utilisateurs et expéditeurs SMTP"] --> A["Accès : DNS, VIP, load balancers, Client Access"]
+    U["Utilisateurs et expéditeurs SMTP"] --> A["Accès clients : Client Access / HTTPS"]
     A --> T["Transport : Shadow Redundancy et Safety Net"]
     T --> D["Bases : DAG, copies, Active Manager"]
-    Q["Infrastructure : quorum, witness, AD, réseau, datacenters"] -.-> A
+    Q["Coordination : quorum, witness, Active Manager, sites"] -.-> A
     Q -.-> T
     Q -.-> D
 ```
 
-**Le DAG maintient les données disponibles. Le load balancing maintient l'accès. Shadow Redundancy et Safety Net sécurisent le parcours du message. Le quorum et la résilience multisite déterminent si cet ensemble peut continuer à fonctionner malgré une panne majeure.**
+**Le DAG rend les copies de bases disponibles et Active Manager pilote leur activation. Les services Client Access permettent de rejoindre la copie active. Shadow Redundancy et Safety Net protègent le flux de messages, tandis que le quorum et la résilience multisite conditionnent la poursuite du service lors d'une panne importante.**
 
 À ce stade, on a posé les principes. Reste la partie la plus opérationnelle : tester une panne, observer le choix de la copie activée, placer correctement un serveur en maintenance et diagnostiquer une réplication qui ne reprend pas.
 

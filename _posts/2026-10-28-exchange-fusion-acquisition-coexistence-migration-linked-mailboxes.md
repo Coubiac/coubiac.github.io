@@ -189,21 +189,19 @@ L'objectif est différent des scénarios précédents. On ne veut plus exploiter
 
 ```mermaid
 flowchart LR
-    subgraph C["Forêt de comptes Contoso"]
-        U1["CONTOSO\alice<br/>Compte actif"]
+    subgraph F["Forêt Fabrikam : comptes utilisateurs"]
+        U2["FABRIKAM\bob<br/>Compte AD actif"]
     end
-    subgraph F["Forêt de comptes Fabrikam"]
-        U2["FABRIKAM\bob<br/>Compte actif"]
-    end
-    subgraph R["Forêt de ressources Exchange"]
-        R1["Alice : objet lié à l'identité Contoso"]
+    subgraph C["Forêt Contoso : comptes + organisation Exchange"]
+        U1["CONTOSO\alice<br/>Compte AD actif"]
+        M1["Alice : UserMailbox"]
         R2["Bob : objet AD désactivé<br/>Linked Mailbox"]
-        EX["Une organisation Exchange<br/>Bases hébergeant les boîtes"]
-        R1 --- EX
+        EX["Bases Exchange Contoso"]
+        U1 --- M1
+        M1 --- EX
         R2 --- EX
     end
-    U1 --> R1
-    U2 -->|"Identité liée"| R2
+    U2 -->|"Identité liée via approbation"| R2
 ```
 
 Dans un exemple simplifié où **la forêt de Contoso héberge à la fois ses propres comptes et Exchange**, les utilisateurs Contoso peuvent conserver des **User Mailboxes ordinaires** et les utilisateurs de la forêt Fabrikam utiliser des **Linked Mailboxes**. Il n'est pas nécessaire que tous les utilisateurs soient en Linked Mailbox.

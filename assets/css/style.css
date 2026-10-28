@@ -182,6 +182,16 @@ h3 { font-size: 1.3rem; }
 .post-body h3 { scroll-margin-top: 2rem; }
 .post-body li + li { margin-top: .35rem; }
 
+/* Contain screenshots and illustrations within the article column. */
+.post-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.5rem auto;
+  border: 1px solid var(--border);
+  border-radius: .65rem;
+}
+
 .notice {
   max-width: 780px;
   margin: 2rem 0 3rem;

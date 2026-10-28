@@ -92,9 +92,9 @@ Le répartiteur de charge distribue les connexions et doit éviter les serveurs 
 
 Prenons un serveur Exchange dont le site OWA dysfonctionne alors que MAPI/HTTP continue de répondre. Un répartiteur qui vérifie uniquement que le port TCP/443 est ouvert risque de continuer à lui envoyer les utilisateurs du webmail, alors que le service dont ils ont besoin est défaillant.
 
-Un contrôle plus pertinent doit distinguer **la disponibilité de la machine** de **la santé du service applicatif**. Selon la méthode utilisée, le répartiteur peut simplement tester une connexion TCP, interroger un endpoint HTTP de santé ou tenir compte de l'état propre à chaque service. La distinction L4/L7 concerne principalement le traitement et l'orientation du trafic ; elle ne suffit pas, à elle seule, pour savoir quelles sondes un équipement sait effectuer.
+Un contrôle plus pertinent doit distinguer **la disponibilité de la machine** de **la santé du service applicatif**. Selon la méthode utilisée, le répartiteur peut tester une connexion TCP, interroger un endpoint HTTP de santé ou tenir compte de l'état propre à chaque service. La distinction L4/L7 concerne principalement le traitement et l'orientation du trafic ; elle ne suffit pas, à elle seule, pour savoir quelles sondes un équipement sait effectuer.
 
-Ce qui importe pour Exchange, ce n'est pas la marque ni l'interface du répartiteur : c'est qu'un client puisse être redirigé vers un autre service Client Access sain, sans dépendre d'un point d'entrée unique. La configuration détaillée d'un load balancer est un sujet distinct.
+Ce qui importe pour Exchange, ce n'est ni la marque ni l'interface du répartiteur : c'est qu'un client puisse rejoindre un autre service Client Access sain, sans dépendre d'un point d'entrée unique.
 
 ### Managed Availability : un contrôle plus utile qu'un simple port 443 ouvert
 
@@ -169,207 +169,34 @@ Le witness est généralement un **serveur Windows membre du domaine, extérieur
 
 Pour une architecture répartie entre deux datacenters, Microsoft préconise de placer le witness dans un **troisième emplacement indépendant**, lorsqu'il existe, afin de favoriser la continuité après la perte de l'un des deux datacenters.
 
-### Le point d'accès administratif du cluster : pourquoi une adresse IP pour le DAG ?
+### Le point d'accès administratif du cluster : une IP dont Exchange peut se passer
 
-Un DAG Exchange repose sur **Windows Server Failover Clustering**, mais cela ne signifie pas que les utilisateurs doivent se connecter à un nom de cluster.
+Un DAG Exchange s'appuie sur **Windows Server Failover Clustering**, mais cela ne signifie pas que les clients ou les administrateurs Exchange doivent se connecter à un nom de cluster.
 
-Dans un cluster Windows traditionnel, on peut attribuer à l'ensemble un **point d'accès administratif** (*Cluster Administrative Access Point*, ou CAAP). Il associe :
+Dans un cluster Windows traditionnel, le **point d'accès administratif** (*Cluster Administrative Access Point*, CAAP) est une identité réseau propre au cluster. Elle comprend un nom virtuel, une adresse IP et un compte ordinateur Active Directory appelé **CNO** (*Cluster Name Object*). Le CNO est l'identité de sécurité du cluster, notamment pour l'authentification Kerberos.
 
-- un **nom réseau virtuel** permettant d'identifier le cluster ;
-- une **adresse IP** liée à ce nom ;
-- un compte ordinateur dans Active Directory, le **CNO** (*Cluster Name Object*), utilisé comme identité de sécurité du cluster.
+Imaginons deux serveurs, `EXCH01` et `EXCH02`, réunis dans le DAG `DAG01`. Avec le modèle historique, le cluster sous-jacent peut posséder un nom DNS `DAG01.adatum.com`, une adresse IP et le compte ordinateur `DAG01$` dans l'AD.
 
-Imaginons `DAG01` avec `EXCH01` et `EXCH02`. Dans le modèle historique, Windows peut disposer d'un nom `DAG01.adatum.com`, d'une IP propre et d'un compte ordinateur `DAG01---
-layout: post
-title: "Exchange Server : comprendre la haute disponibilité au-delà du DAG"
-description: "Pourquoi un DAG ne suffit pas à assurer la disponibilité d’Exchange : réplication, accès client, transport SMTP, quorum et résilience multisite."
-tags:
-  - Exchange Server
-  - Haute disponibilité
-mermaid: true
-published: false
----
+Ces éléments ne jouent **aucun rôle de point d'entrée pour Outlook ou OWA**. Il faut distinguer :
 
-Quand on parle de haute disponibilité dans Exchange Server, on pense immédiatement aux **DAG** (*Database Availability Groups*). C'est logique : ils permettent de conserver plusieurs copies des bases de données et de basculer sur une copie saine en cas de défaillance.
-
-Mais une base parfaitement répliquée ne suffit pas à rendre une messagerie disponible. Si les clients ne peuvent plus se connecter, si un équipement réseau constitue un point de défaillance unique ou si les messages se perdent avant leur remise, l'utilisateur subit malgré tout une interruption.
-
-La haute disponibilité Exchange repose donc sur plusieurs mécanismes complémentaires : **disponibilité des bases**, **accès client**, **transport des messages** et **résilience des sites**.
-
-Cet article prolonge [Comprendre le fonctionnement d'un DAG](/articles/comprendre-fonctionnement-dag-exchange-server/), sans reprendre tous les détails de son fonctionnement. La configuration des URL, des certificats et d'Autodiscover est abordée séparément dans [Comprendre les accès clients, Autodiscover, MAPI/HTTP, OWA et ActiveSync](/articles/exchange-server-comprendre-acces-clients-autodiscover-certificats-mapi-owa-activesync/).
-
-> **Versions :** les exemples de formation utilisent Exchange Server 2019. En octobre 2026, Exchange Server 2016 et 2019 ont dépassé leur date de fin de support (14 octobre 2025). Pour une infrastructure on-premises maintenue, Exchange Server Subscription Edition (SE) est désormais la version de référence. Les principes décrits restent applicables à SE, sous réserve des évolutions documentées par Microsoft.
-
-## Commencer par traquer les points de défaillance uniques
-
-Imaginons deux serveurs Exchange dont toutes les bases sont répliquées. Les clients les joignent à travers un répartiteur de charge.
-
-```mermaid
-flowchart TB
-    C["Clients Outlook et OWA"] --> LB["Load balancer unique"]
-    LB --> E1["EXCH01"]
-    LB --> E2["EXCH02"]
-    E1 <-->|"DAG"| E2
-```
-
-La perte d'un serveur Exchange peut être absorbée. Mais si le seul load balancer tombe, les clients perdent leur point d'entrée. On a rendu la couche Exchange redondante tout en conservant un **SPOF** (*Single Point of Failure*) devant elle.
-
-La même question se pose pour les commutateurs, les pare-feu, le DNS, Active Directory, les liens WAN, les passerelles SMTP et l'alimentation électrique.
-
-Il ne s'agit pas de tout doubler sans discernement. Il faut d'abord définir le niveau de service attendu, les scénarios de panne à couvrir, le **RTO** (temps maximal de reprise acceptable) et le **RPO** (perte de données maximale acceptable). Le coût de la protection doit être comparé au coût d'une indisponibilité.
-
-## Première couche : le DAG protège les bases, pas toute la messagerie
-
-Une base de données Exchange peut être présente sur plusieurs membres d'un DAG, mais **une seule copie est montée et active à un instant donné**. Les autres sont passives.
-
-Le composant **Active Manager**, intégré au service Microsoft Exchange Replication, pilote l'activation des bases. Le **PAM** (*Primary Active Manager*) prend les décisions de basculement au niveau du DAG ; les **SAM** (*Standby Active Managers*) suivent notamment l'état local des copies.
-
-Cela reste distinct de Windows Failover Clustering : le cluster fournit notamment les informations de membership et le quorum, tandis qu'Exchange décide quelle copie de base activer.
-
-Pour approfondir ces rôles, le quorum et la sélection des copies, voir [l'article consacré au DAG](/articles/comprendre-fonctionnement-dag-exchange-server/).
-
-### Deux modes de réplication : File Mode et Block Mode
-
-La réplication continue repose sur les journaux de transactions, mais elle peut fonctionner de deux façons.
-
-En **File Mode**, Exchange transfère les fichiers de journaux une fois fermés. Ce mode permet notamment à une copie de rattraper son retard après une interruption de la réplication ou une maintenance.
-
-En **Block Mode**, lorsque les copies ont rattrapé leur retard, les données du tampon de journal ESE sont transmises aux tampons des copies passives avant même la fermeture du fichier de journal. Les serveurs passifs assemblent ensuite leurs propres journaux.
-
-```mermaid
-flowchart LR
-    A["Base active"] --> B["Tampon des journaux ESE"]
-    B -->|"Block Mode : blocs"| C["Tampon sur la copie passive"]
-    B -->|"Fichier fermé : File Mode"| D["Journal sur la copie passive"]
-    C --> E["Journal reconstitué"]
-    D --> F["Rejeu dans la base passive"]
-    E --> F
-```
-
-Le Block Mode réduit le décalage entre les copies et le risque de perdre les derniers journaux lors d'une panne. **Ce n'est toutefois pas une réplication synchrone au sens d'un accusé de réception de chaque écriture par toutes les copies** : le RPO réel dépend de l'état des copies et des conditions de basculement.
-
-### Comment Exchange choisit-il une copie ?
-
-Lorsqu'une base active devient indisponible, Exchange recherche une copie éligible, récupère si possible les derniers journaux et applique ses critères de santé. `ActivationPreference` exprime un ordre souhaité, mais ne garantit pas que la copie correspondante sera systématiquement retenue.
-
-Autre paramètre déterminant : `AutoDatabaseMountDial`. Avec `BestAvailability`, Exchange peut accepter, sous certaines conditions, de monter une copie malgré un maximum de douze journaux manquants. `GoodAvailability` réduit ce seuil à six ; `Lossless` privilégie l'absence de perte de journaux. Ces paramètres matérialisent un arbitrage entre **reprise de service** et **risque de perte de données**.
-
-## Deuxième couche : rendre les services d'accès client disponibles
-
-Depuis Exchange Server 2016, les services d'accès client sont intégrés au rôle Mailbox. Ils sont conçus pour fonctionner de manière **stateless** : le client peut entrer par un serveur Exchange différent de celui qui héberge la copie active de sa base.
-
-```mermaid
-flowchart LR
-    O["Outlook / OWA"] --> VIP["Nom de service + VIP"]
-    VIP --> F1["EXCH01 : accès client"]
-    VIP --> F2["EXCH02 : accès client"]
-    F1 -->|"Proxy vers la base active"| B["EXCH02 : DB01 active"]
-    F2 --> B
-```
-
-Le répartiteur de charge distribue les connexions et doit éviter les serveurs dont le service concerné est défaillant. **La persistance de session n'est pas nécessaire** pour les services HTTP modernes d'Exchange 2016/2019.
-
-### Un service qui répond sur TCP/443 peut-il quand même être en panne ?
-
-Prenons un serveur Exchange dont le site OWA dysfonctionne alors que MAPI/HTTP continue de répondre. Un répartiteur qui vérifie uniquement que le port TCP/443 est ouvert risque de continuer à lui envoyer les utilisateurs du webmail, alors que le service dont ils ont besoin est défaillant.
-
-Un contrôle plus pertinent doit distinguer **la disponibilité de la machine** de **la santé du service applicatif**. Selon la méthode utilisée, le répartiteur peut simplement tester une connexion TCP, interroger un endpoint HTTP de santé ou tenir compte de l'état propre à chaque service. La distinction L4/L7 concerne principalement le traitement et l'orientation du trafic ; elle ne suffit pas, à elle seule, pour savoir quelles sondes un équipement sait effectuer.
-
-Ce qui importe pour Exchange, ce n'est pas la marque ni l'interface du répartiteur : c'est qu'un client puisse être redirigé vers un autre service Client Access sain, sans dépendre d'un point d'entrée unique. La configuration détaillée d'un load balancer est un sujet distinct.
-
-### Managed Availability : un contrôle plus utile qu'un simple port 443 ouvert
-
-Exchange intègre **Managed Availability**, organisé autour de *probes*, *monitors* et *responders* : les contrôles détectent un problème, les moniteurs en évaluent l'état, et les répondeurs peuvent engager une action de réparation.
-
-Pour les services HTTP, les endpoints de santé tels que `/owa/healthcheck.htm` ou `/mapi/healthcheck.htm` permettent au load balancer de s'appuyer sur la santé de la charge applicative et non sur la seule ouverture du port TCP. Selon le service et son état, ces contrôles peuvent notamment retourner **200** pour un service disponible ou **403** lorsqu'il est déclaré indisponible.
-
-L'idée est importante : **un serveur allumé n'est pas nécessairement un serveur capable de rendre le service attendu**.
-
-## Troisième couche : protéger les messages pendant leur transport
-
-Le DAG protège les bases de données. Mais entre l'arrivée d'un message SMTP et son écriture dans la boîte aux lettres, celui-ci passe par des files d'attente de transport. Exchange dispose de mécanismes de protection spécifiques pour cette période.
-
-### Shadow Redundancy : une copie avant l'accusé de réception SMTP
-
-Prenons une passerelle SMTP externe, deux serveurs Mailbox et un message entrant.
-
-```mermaid
-sequenceDiagram
-    participant G as Passerelle SMTP
-    participant P as EXCH01 (primaire)
-    participant S as EXCH02 (shadow)
-    participant B as Base de boîtes aux lettres
-    G->>P: Transmission du message
-    P->>S: Création de la copie shadow
-    S-->>P: Copie créée
-    P-->>G: Accusé de réception SMTP
-    P->>B: Remise du message
-```
-
-Par défaut, Exchange essaie de disposer d'une copie du message sur un second serveur **avant d'accuser réception** auprès de l'expéditeur. Cette copie est conservée dans une **shadow queue** tant que le serveur principal n'a pas confirmé le traitement du message.
-
-La nuance est que le comportement en cas d'impossibilité de créer cette copie dépend de `RejectMessageOnShadowFailure` : avec sa valeur par défaut (`$false`), Exchange peut accepter le message malgré l'échec de la copie redondante. Il ne faut donc pas présenter Shadow Redundancy comme une garantie absolue en toutes circonstances.
-
-Si le serveur principal disparaît avant d'avoir transmis le message à son destinataire, le serveur détenteur de la copie shadow peut reprendre sa remise.
-
-### Safety Net : une protection *après* la remise
-
-Une fois le message correctement traité, il sort des files de livraison mais reste temporairement conservé dans **Safety Net**, avec une copie redondante dans **Shadow Safety Net**.
-
-Safety Net permet notamment de **resoumettre des messages déjà remis** lorsque le DAG active une copie de base qui ne contient pas encore certaines transactions. Sa durée de rétention par défaut est de **deux jours**.
-
-Il faut donc distinguer :
-
-| Mécanisme | Moment de la protection | Problème traité |
-|---|---|---|
-| Shadow Redundancy | Message encore en transit | Perte du serveur de transport avant la remise |
-| Safety Net | Message déjà traité ou remis | Nouvelle soumission après perte de transactions / basculement |
-| DAG | Données des boîtes aux lettres | Panne de base, disque ou serveur |
-
-Ces mécanismes se complètent. **Une copie shadow n'est pas une copie de base de données**, et Safety Net n'est pas une sauvegarde historique de boîte aux lettres.
-
-## Quatrième couche : résilience SMTP et DNS
-
-Côté Internet, les serveurs expéditeurs découvrent le point d'entrée de la messagerie via les enregistrements **MX**. Un MX contient un nom de serveur et une **préférence** : **plus sa valeur est faible, plus le serveur est prioritaire**.
-
-Il est possible de publier plusieurs MX de même préférence ou des MX principaux et secondaires. Mais ces enregistrements ne constituent pas, à eux seuls, une supervision de service ni un système de répartition rigoureusement équilibré : le comportement concret dépend des serveurs SMTP expéditeurs.
-
-**Attention au MX secondaire qui contourne les protections.** Si le MX principal pointe vers une passerelle antispam tandis qu'un MX secondaire donne un accès SMTP direct à Exchange, les expéditeurs peuvent tenter d'utiliser ce second chemin. Une différence de priorité ne constitue pas une barrière de sécurité. Tous les chemins publics de remise doivent appliquer un niveau de protection cohérent.
-
-Lors d'un changement de passerelle ou d'adresse IP, il est pertinent d'abaisser **en amont** les TTL des enregistrements concernés, en tenant compte de l'ancien TTL encore présent dans les caches DNS. La continuité dépend aussi de l'accessibilité des passerelles, des liens Internet et de la réputation des nouvelles IP d'émission.
-
-## Résilience multisite : les copies ne suffisent pas
-
-Répartir les membres d'un DAG sur plusieurs datacenters permet de conserver des copies des bases hors du site principal. Mais le service dépend également du **quorum**, de l'annuaire, du DNS, de l'accès client et des entrées/sorties SMTP.
-
-### Le witness participe au quorum
-
-Dans un DAG avec un nombre pair de membres, le serveur témoin (*witness*) peut fournir le vote supplémentaire permettant au cluster de départager les membres. Il n'héberge pas une copie des bases et ne choisit pas lui-même quelle base doit devenir active.
-
-Le witness est généralement un **serveur Windows membre du domaine, extérieur au DAG**. Lorsqu'il ne s'agit pas d'un serveur Exchange, le groupe `Exchange Trusted Subsystem` doit disposer des droits administrateurs locaux nécessaires à la création du partage et des fichiers du témoin.
-
-Pour une architecture répartie entre deux datacenters, Microsoft préconise de placer le witness dans un **troisième emplacement indépendant**, lorsqu'il existe, afin de favoriser la continuité après la perte de l'un des deux datacenters.
-
-. Ces éléments servent à identifier ou administrer le cluster sous-jacent : **ils ne correspondent ni à une adresse de connexion Outlook, ni à une VIP de répartition des accès clients, ni au serveur témoin**.
-
-La distinction est fondamentale :
-
-| Élément | Fonction |
+| Élément | Ce qu'il fait |
 |---|---|
-| **CAAP / CNO** | Identité réseau et de sécurité du cluster Windows sous-jacent, dans le modèle avec point d'accès |
-| **Witness** | Participation à l'arbitrage du quorum, selon le nombre de votes disponibles |
-| **Namespace / VIP client** | Point d'entrée utilisé par Outlook, OWA et les autres services Exchange |
-| **DAG** | Gestion de la réplication et de la mobilité des copies de bases, avec Active Manager et le cluster |
+| **CAAP et CNO** | Identité réseau et de sécurité du cluster Windows, si ce modèle est utilisé |
+| **Witness** | Participe au quorum lorsque les votes disponibles le nécessitent |
+| **Nom DNS et VIP des clients** | Permettent aux utilisateurs d'atteindre les services Client Access |
+| **DAG** | Regroupe les membres Exchange, leurs copies de bases et les mécanismes de basculement |
 
-Pour un DAG Exchange moderne, **le point d'accès administratif du cluster n'est pas nécessaire**. On peut créer un DAG dit *IP-less* ou *sans point d'accès administratif* : aucun nom réseau ni aucune adresse IP n'est attribué au cluster, aucun CNO n'est créé, et le nom du DAG n'est pas publié comme enregistrement DNS du cluster. L'objet de configuration du DAG existe toutefois toujours dans Active Directory : il ne faut pas le confondre avec le compte ordinateur CNO absent.
+Pour un DAG moderne, le point d'accès administratif **n'est pas nécessaire**. On peut créer un **DAG sans point d'accès administratif** (*IP-less DAG*) : le cluster n'a pas de ressource de nom réseau, pas de ressource IP, pas d'enregistrement DNS associé à son nom, et **aucun CNO n'est créé**.
 
-Le cluster continue à fonctionner : *heartbeat*, appartenance des membres, quorum et base de configuration du cluster restent disponibles. Simplement, on ne l'administre plus par un nom réseau virtuel via le gestionnaire graphique Windows. L'administration du DAG passe par Exchange Management Shell ; les cmdlets Windows de cluster, lorsqu'elles sont nécessaires, ciblent un membre.
+Cela ne supprime pas le cluster : les mécanismes de *heartbeat*, de quorum et de suivi des membres continuent de fonctionner. L'objet de configuration du DAG existe toujours dans Active Directory, mais ce n'est pas un compte ordinateur CNO.
 
-Pourquoi alors certains ateliers pratiques demandent-ils de créer au préalable un compte ordinateur `DAG01` désactivé, auquel on délègue le contrôle au groupe `Exchange Trusted Subsystem` ? Parce qu'ils illustrent **l'ancien modèle avec CNO précréé** (*pre-staged CNO*). Cette étape répond à la gestion des permissions du compte ordinateur de cluster ; ce n'est pas un préalable universel à la haute disponibilité Exchange.
+Un tel cluster n'est pas administré en se connectant à un nom virtuel depuis le gestionnaire graphique Windows. On administre le DAG via Exchange Management Shell ; si des cmdlets de cluster Windows sont nécessaires, elles ciblent directement un membre.
 
-Microsoft recommande de se passer du CAAP lorsque les outils d'exploitation et les logiciels tiers n'en dépendent pas. Certaines intégrations historiques de sauvegarde ou de supervision peuvent néanmoins exiger ce point d'accès ; il faut alors vérifier leur compatibilité avant de choisir le modèle.
+Pourquoi certains exercices demandent-ils de créer un compte ordinateur `DAG01` désactivé et de donner au groupe `Exchange Trusted Subsystem` le contrôle de cet objet ? Il s'agit de **précréer le CNO** (*pre-stage*) pour un DAG avec point d'accès administratif, afin que le cluster puisse utiliser l'identité prévue sans devoir créer lui-même ce compte. **Ce n'est pas une étape obligatoire de création d'un DAG**.
 
-Voir [la documentation Microsoft sur les DAG](https://learn.microsoft.com/en-us/exchange/high-availability/database-availability-groups/database-availability-groups) et [la précréation du CNO](https://learn.microsoft.com/en-us/exchange/high-availability/manage-ha/pre-stage-dag-cnos).
+Microsoft recommande de s'affranchir du CAAP lorsque rien ne l'exige. Certaines solutions de supervision ou de sauvegarde historiques peuvent toutefois avoir besoin de cet accès : il faut le vérifier avant de choisir le mode de déploiement.
+
+Voir [les groupes de disponibilité de bases Microsoft](https://learn.microsoft.com/en-us/exchange/high-availability/database-availability-groups/database-availability-groups) et [la précréation du CNO](https://learn.microsoft.com/en-us/exchange/high-availability/manage-ha/pre-stage-dag-cnos).
 
 ### Witness alternatif : ne pas confondre préconfiguration et basculement automatique
 
@@ -419,7 +246,7 @@ Deux défaillances très différentes peuvent se produire :
 - **Le site OWA d'EXCH02 tombe, mais la base reste active sur EXCH02.** L'accès web peut continuer par EXCH01, qui transmet les requêtes au backend approprié. La base n'a pas besoin de basculer.
 - **EXCH02 tombe entièrement.** Active Manager doit pouvoir monter une copie saine de DB01 sur EXCH01, et les connexions clientes doivent rejoindre un point d'entrée encore disponible. Le basculement de la base et la reprise de l'accès client sont deux opérations distinctes.
 
-C'est précisément ce que les simulations de panne permettent de comprendre : **la disponibilité de la base n'implique pas automatiquement la disponibilité des services**, et inversement. Pour vérifier une chaîne de haute disponibilité, il faut tester chaque couche et une panne combinée, pas seulement constater que deux serveurs sont allumés.
+C'est précisément ce que les simulations de panne permettent de comprendre : **la disponibilité de la base n'implique pas automatiquement la disponibilité des services**, et inversement. Pour valider une architecture, il faut tester chaque couche et une panne combinée, pas simplement constater que deux serveurs sont allumés.
 
 ## Une première boîte à outils pour l'exploitation
 

@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Exchange Server : comprendre les destinataires, les groupes et les politiques d'adressage"
-description: "Boîtes aux lettres, groupes dynamiques, réservation de salles, dossiers publics, domaines SMTP, stratégies d'adresses et segmentation des carnets : comprendre comment ces objets s'articulent dans Exchange Server."
+description: "Boîtes Exchange, Linked Mailboxes entre forêts AD, groupes, délégations, ressources, politiques SMTP et carnets d’adresses : comprendre et administrer les destinataires."
 tags:
   - Exchange Server
   - PowerShell
@@ -27,7 +27,10 @@ Les destinataires Exchange reposent sur des objets Active Directory, mais tous l
 | Equipment mailbox | Boîte de ressource pour du matériel | Réservation d'équipement |
 | Distribution group | Liste de membres recevant le même message | Diffusion |
 | Dynamic distribution group | Ensemble de destinataires déterminé par un filtre | Diffusion fondée sur des attributs |
-| Mail contact / Mail user | Destinataire représentant une adresse externe | Correspondants ou comptes externes |
+| Mail contact | Contact AD à adresse externe, sans compte de connexion | Correspondant externe visible dans la GAL |
+| Mail user | Utilisateur AD ayant une adresse de destination externe, sans boîte locale | Consultant ou utilisateur hébergé ailleurs |
+| Linked mailbox | Boîte dans une forêt Exchange liée à un compte actif d’une autre forêt approuvée | Forêt de ressources / forêts de comptes |
+| Remote mailbox | Objet utilisateur local représentant une boîte dans Exchange Online | Organisation Exchange hybride |
 
 La propriété `RecipientTypeDetails` est souvent la plus utile pour identifier précisément la nature d'un destinataire :
 
@@ -44,6 +47,134 @@ Pour inspecter un objet particulier :
 Get-Recipient "alice@contoso.example" |
     Format-List Name,RecipientType,RecipientTypeDetails,PrimarySmtpAddress
 ```
+
+### Mail Contact, Mail User et Remote Mailbox : trois objets à ne pas confondre
+
+Deux correspondants peuvent apparaître de la même manière dans Outlook tout en correspondant à des objets Exchange très différents.
+
+- Un **Mail Contact** est un contact dans l'AD, **sans compte d'ouverture de session**. Exemple : un prestataire extérieur que l'on veut retrouver dans la GAL. Le courrier envoyé au contact est acheminé à sa véritable adresse externe.
+- Un **Mail User** est un **compte utilisateur AD**, avec SID et possibilité de se connecter aux ressources autorisées, mais **sans boîte Exchange locale**. Ses messages sont acheminés à une adresse externe. Exemple : un consultant qui se connecte à une application interne, mais lit ses e-mails chez son employeur.
+- Une **Remote Mailbox** est un cas particulier des environnements **hybrides** : l'identité Exchange est gérée côté AD local, tandis que la boîte se trouve dans **Exchange Online**. Ce n'est pas une boîte liée entre deux forêts AD.
+
+```powershell
+# Correspondant externe sans compte d'authentification
+New-MailContact -Name "Prestataire Dupont" `
+    -ExternalEmailAddress "dupont@partenaire.example"
+
+# Le compte AD consultantAD existe déjà : on lui associe une adresse externe
+Enable-MailUser -Identity "consultantAD" `
+    -ExternalEmailAddress "consultant@partenaire.example"
+
+Get-MailContact "Prestataire Dupont" |
+    Format-List Name,ExternalEmailAddress
+
+Get-MailUser "consultantAD" |
+    Format-List Name,ExternalEmailAddress,PrimarySmtpAddress
+```
+
+Pour les Mail Contacts et Mail Users, la propriété Exchange `ExternalEmailAddress` décrit l'adresse vers laquelle remettre les messages ; dans l'AD, cette destination est notamment représentée par `targetAddress`. Cette adresse de routage ne doit pas être confondue avec l'adresse SMTP présentée dans la GAL.
+
+### Linked Mailbox : une boîte Exchange, deux forêts Active Directory
+
+Le terme *Linked Mailbox* peut prêter à confusion : **il ne désigne ni une boîte partagée, ni une copie de boîte, ni une synchronisation de messages**. Il s'agit d'une **boîte aux lettres normale hébergée par Exchange, mais utilisée par un compte d'authentification situé dans une autre forêt AD**.
+
+#### Exemple : une entreprise et sa filiale
+
+Imaginons deux forêts Active Directory **distinctes** :
+
+1. **`filiale-ad.example`**, la **forêt de comptes** : Alice possède le compte `FILIALE\alice`. Elle ouvre sa session Windows dans cette forêt et y utilise son mot de passe.
+2. **`contoso.example`**, la **forêt de ressources** : c'est ici que se trouvent l'organisation Exchange, les serveurs et les bases de boîtes aux lettres.
+
+L'entreprise veut centraliser ses boîtes Exchange dans `contoso.example` **sans obliger Alice à abandonner son compte AD de filiale**.
+
+```mermaid
+flowchart LR
+    subgraph COMPTES["Forêt de comptes : filiale-ad.example"]
+        U["FILIALE\alice<br/>Compte AD ACTIF<br/>Connexion Windows et authentification"]
+    end
+    subgraph RESSOURCES["Forêt de ressources : contoso.example"]
+        A["Objet utilisateur AD DÉSACTIVÉ<br/>Porte les attributs Exchange"]
+        B["Linked Mailbox : Alice Martin<br/>Base DB-Filiale"]
+        A --- B
+    end
+    U -->|"Identité de référence<br/>via relation d'approbation"| A
+```
+
+**Pourquoi créer un compte désactivé dans la forêt Exchange ?** Parce qu'une boîte Exchange on-premises est associée à un objet utilisateur AD dans la forêt où Exchange est installé. Cet objet porte notamment les attributs de messagerie et représente la boîte dans l'annuaire Exchange. Mais Alice **ne doit pas se connecter avec ce deuxième compte** : on le laisse donc désactivé. Le compte `FILIALE\alice`, lui, reste actif.
+
+Le lien entre les identités repose notamment sur l'attribut AD **`msExchMasterAccountSid`** du compte associé à la boîte dans la forêt Exchange : il permet à Exchange d'identifier le compte principal d'une forêt approuvée. Ce n'est donc pas une seconde authentification avec un compte AD désactivé.
+
+| Élément | Forêt de comptes | Forêt Exchange (ressources) |
+|---|---|---|
+| Compte d'Alice | **Actif** | **Désactivé** |
+| Mot de passe et ouverture de session | Gérés ici | Pas de connexion avec le compte désactivé |
+| Serveur Exchange et données de boîte | Pas nécessaires | **Hébergés ici** |
+| Identité d'accès à la boîte | `FILIALE\alice` | Liée à ce compte via `LinkedMasterAccount` |
+
+**Le sens de l'approbation est capital** : au minimum, **la forêt Exchange (ressources) approuve la forêt de comptes**. En termes AD, il s'agit d'une approbation **sortante à sens unique depuis la forêt Exchange**. Ce n'est pas forcément une confiance bidirectionnelle. Il faut aussi que le compte d'Alice existe *avant* la création de sa Linked Mailbox.
+
+#### Création en Exchange Management Shell
+
+La commande suivante s'exécute dans l'EMS de la **forêt de ressources**. On suppose la relation d'approbation opérationnelle, le compte `FILIALE\alice` existant et la base `DB-Filiale` disponible.
+
+```powershell
+# Identifiants permettant d'interroger la forêt de comptes
+$cred = Get-Credential "FILIALE\administrateur"
+
+New-Mailbox -Name "Alice Martin" `
+    -Alias "alice.martin" `
+    -Database "DB-Filiale" `
+    -LinkedMasterAccount "FILIALE\alice" `
+    -LinkedDomainController "dc1.filiale-ad.example" `
+    -LinkedCredential $cred
+```
+
+Comprenons chaque paramètre :
+
+- `Name` et `Alias` identifient le nouvel objet et sa boîte dans **la forêt Exchange**.
+- `Database` indique où seront **stockés les messages**.
+- `LinkedMasterAccount` désigne le **compte AD actif de la forêt de comptes** qui doit pouvoir ouvrir cette boîte.
+- `LinkedDomainController` désigne un contrôleur de domaine **de la forêt de comptes**, utilisé pour résoudre ce compte.
+- `LinkedCredential` fournit, si nécessaire, les identifiants permettant d'interroger cette forêt lors de l'opération d'administration. **Ce ne sont pas les identifiants qu'Alice saisira dans Outlook**.
+
+Avec une approbation **à sens unique**, les identifiants d'un administrateur de la forêt de comptes sont normalement nécessaires pour cette opération. Une relation bidirectionnelle peut rendre leur fourniture inutile dans certains contextes de délégation. Cette étape concerne la **création** de la boîte, pas la connexion quotidienne de l'utilisateur.
+
+On vérifie ensuite :
+
+```powershell
+Get-Mailbox "Alice Martin" |
+    Format-List Name,RecipientTypeDetails,IsLinked,LinkedMasterAccount,Database
+
+# Inventaire de toutes les boîtes liées de l'organisation
+Get-Mailbox -ResultSize Unlimited `
+    -Filter "RecipientTypeDetails -eq 'LinkedMailbox'" |
+    Format-Table Name,LinkedMasterAccount,Database
+```
+
+Le type attendu est `LinkedMailbox` et `LinkedMasterAccount` doit correspondre à `FILIALE\alice`.
+
+#### Et lorsqu'Alice ouvre Outlook ?
+
+1. Alice ouvre sa session avec **`FILIALE\alice`**, son compte habituel.
+2. Grâce aux relations d'approbation et à la configuration de l'accès client Exchange, son identité est reconnue.
+3. Exchange rattache cette identité à la **Linked Mailbox** dans `contoso.example`.
+4. Les messages et le calendrier sont consultés **dans la base Exchange de la forêt de ressources**. Il n'existe pas une deuxième boîte qui se synchronise depuis la filiale.
+
+La relation d'approbation n'assure pas, à elle seule, toute la configuration d'Outlook, des URL, des certificats et de la connectivité. Ces points doivent également être prévus.
+
+#### Les confusions les plus fréquentes
+
+| Situation | Linked Mailbox ? | Pourquoi ? |
+|---|---|---|
+| Alice a son compte AD **et sa boîte** dans la même forêt | **Non** | `UserMailbox` classique |
+| Plusieurs utilisateurs ouvrent `commercial@filiale.example` | **Non** | `SharedMailbox` et délégations |
+| Alice conserve son compte dans une forêt A et sa boîte est centralisée dans une forêt Exchange B approuvant A | **Oui** | C'est le cas d'usage d'une `LinkedMailbox` |
+| Alice possède un objet local, mais sa boîte est sur Microsoft 365 | **Non** | `RemoteMailbox` d'un déploiement hybride |
+| On fusionne deux entreprises et on déplace leurs messages | **Pas à lui seul** | Une Linked Mailbox **ne déplace pas** les données : la migration est un autre processus |
+
+Une **Linked Mailbox ne nécessite pas deux organisations Exchange**. C'est souvent au contraire une manière de **centraliser** la messagerie dans une seule organisation tout en conservant plusieurs forêts d'identités.
+
+**À retenir :** *compte actif dans la forêt de comptes ; objet désactivé et boîte dans la forêt Exchange ; relation d'approbation ; lien d'identité ; une seule boîte à lettres*.
 
 ### Activer une boîte pour un compte existant
 
@@ -77,6 +208,25 @@ Get-Mailbox -Database "DB-Filiale" -ResultSize Unlimited |
 ```
 
 La base Exchange héberge les données. L'OU AD facilite l'administration des objets. Les adresses SMTP et les carnets d'adresses sont encore deux couches distinctes. **Une base par filiale n'est pas une obligation technique pour segmenter les utilisateurs.**
+
+### Désactiver une boîte n'est pas supprimer son utilisateur
+
+Deux opérations sont souvent confondues. Pour une boîte utilisateur locale classique :
+
+| Cmdlet | Effet sur la boîte | Effet sur le compte AD |
+|---|---|---|
+| `Disable-Mailbox` | La déconnecte du compte ; elle reste récupérable selon la rétention applicable | **Compte conservé** |
+| `Remove-Mailbox` | La supprime / déconnecte dans le cadre du cycle de suppression | **Compte utilisateur associé supprimé**, dans le cas usuel |
+
+```powershell
+# Vérifier l'objet avant toute action
+Get-Mailbox "alice" | Format-List Name,Database,RecipientTypeDetails
+
+# Exemple : déconnecter une boîte utilisateur SANS supprimer son compte AD
+Disable-Mailbox -Identity "alice"
+```
+
+Les cas spéciaux (boîtes partagées, d'arbitrage, de ressources, migrations, boîtes déconnectées) demandent des vérifications supplémentaires. Ne pas utiliser `Remove-Mailbox` comme synonyme de suppression d'une simple adresse SMTP.
 
 ## 2. Boîte partagée : distinguer accès et identité d'envoi
 
@@ -118,6 +268,51 @@ Sur Exchange on-premises, `Add-ADPermission` reste notamment employée pour `Sen
 
 Le mappage automatique dans Outlook est également distinct des droits : il fonctionne avec certaines délégations directes à des utilisateurs, mais pas avec une simple attribution de `FullAccess` à un groupe.
 
+### Délégation d'envoi : également sur une boîte utilisateur
+
+Le droit **Send on Behalf** s'accorde notamment sur une boîte utilisateur ; la configuration est stockée dans sa propriété `GrantSendOnBehalfTo`.
+
+```powershell
+# Ajouter Alice comme déléguée à la boîte "direction",
+# en préservant les éventuels délégués existants
+Set-Mailbox "direction" -GrantSendOnBehalfTo @{Add="alice"}
+
+Get-Mailbox "direction" | Format-List GrantSendOnBehalfTo
+```
+
+Si un utilisateur possède à la fois `Send As` et `Send on Behalf` pour la même identité, **Send As** prend le dessus. Ces droits ne sont pas des permissions de lecture.
+
+### Partage du calendrier : droits de dossier, pas droits de boîte entière
+
+Le manuel distingue aussi les **permissions sur le dossier Calendrier**. On peut autoriser Bob à consulter le calendrier d'Alice **sans lui accorder `FullAccess` sur toute sa boîte**.
+
+| Rôle | Ce que Bob peut faire |
+|---|---|
+| `AvailabilityOnly` | Voir seulement libre / occupé |
+| `LimitedDetails` | Voir libre / occupé, objet et emplacement |
+| `Reviewer` | Lire les éléments du dossier |
+| `Editor` | Lire et modifier les éléments |
+| `Owner` | Administrer le dossier et ses droits |
+
+```powershell
+# Le nom du dossier dépend de la langue de la boîte : Calendar ou Calendrier
+Get-MailboxFolderPermission -Identity "alice:\Calendar"
+
+# Autoriser Bob à voir les éléments du calendrier
+Add-MailboxFolderPermission `
+    -Identity "alice:\Calendar" `
+    -User "bob" `
+    -AccessRights Reviewer
+
+# Modifier une autorisation déjà existante
+Set-MailboxFolderPermission `
+    -Identity "alice:\Calendar" `
+    -User "bob" `
+    -AccessRights LimitedDetails
+```
+
+**`Add-MailboxFolderPermission` ajoute** une entrée qui n'existe pas encore ; **`Set-MailboxFolderPermission` modifie** une entrée existante. Une délégation de traitement des invitations de réunion ne se réduit pas à donner `Reviewer` ou `Editor` : elle implique des réglages supplémentaires. Ne pas confondre non plus ces droits avec la politique de réservation d'une **Room Mailbox**.
+
 ## 3. Groupes de distribution : membres fixes ou calculés
 
 ### Groupe de distribution classique
@@ -153,6 +348,38 @@ Il ne faut pas non plus confondre **approbation d'une demande d'adhésion** et *
 Get-DistributionGroup "DG-Filiale-Managers" |
     Format-List MemberJoinRestriction,MemberDepartRestriction,ManagedBy
 ```
+
+### Qui a le droit d'écrire au groupe ? Et qui approuve les messages ?
+
+Les **règles d'adhésion** (rejoindre ou quitter un groupe) ne contrôlent **pas** les expéditeurs. Il existe trois décisions indépendantes :
+
+| Mécanisme | Question |
+|---|---|
+| `MemberJoinRestriction` | Qui peut **rejoindre** le groupe ? |
+| Restrictions de remise | Qui peut **envoyer** au groupe ? |
+| Modération | Faut-il **approuver chaque message** avant sa distribution ? |
+
+```powershell
+# Refuser les messages envoyés par des expéditeurs non authentifiés
+Set-DistributionGroup "DG-Filiale-Managers" `
+    -RequireSenderAuthenticationEnabled $true
+
+# Réserver l'envoi à Alice (remplace la liste autorisée existante)
+Set-DistributionGroup "DG-Filiale-Managers" `
+    -AcceptMessagesOnlyFromSendersOrMembers "alice"
+
+# Faire approuver les messages par Bob
+Set-DistributionGroup "DG-Filiale-Managers" `
+    -ModerationEnabled $true `
+    -ModeratedBy "bob"
+
+Get-DistributionGroup "DG-Filiale-Managers" |
+    Format-List RequireSenderAuthenticationEnabled,AcceptMessagesOnlyFromSendersOrMembers,ModerationEnabled,ModeratedBy
+```
+
+La modération s'appuie sur une **boîte d'arbitrage** pour conserver les messages en attente de décision. Elle n'a aucun rapport avec l'approbation d'une **demande d'adhésion**. Attention : les commandes qui affectent directement une liste multivaluée peuvent **remplacer** sa valeur précédente.
+
+Enfin, Exchange permet de confier la gestion d'un groupe à un propriétaire (`ManagedBy`), et, sous réserve des rôles RBAC attribués, d'autoriser certains utilisateurs à gérer ou créer eux-mêmes des groupes (`MyDistributionGroups`). Ces possibilités relèvent de la **délégation administrative**, pas de la remise SMTP.
 
 ### Groupe de distribution dynamique
 
@@ -245,6 +472,38 @@ Get-CalendarProcessing "Salle Filiale 1" |
 
 Ces paramètres décrivent *qui peut réserver et comment*. Ils ne doivent pas être confondus avec les permissions permettant d'ouvrir directement le calendrier de la salle.
 
+### Au-delà de l'autorisation de réserver : les règles de calendrier
+
+Les paramètres `BookInPolicy` et `AllBookInPolicy` répondent à la question **qui peut réserver ?**. D'autres paramètres répondent à **dans quelles conditions la réservation est-elle recevable ?**
+
+```powershell
+Get-CalendarProcessing "Salle Filiale 1" |
+    Format-List AllowConflicts,AllowRecurringMeetings,BookingWindowInDays,MaximumDurationInMinutes,ScheduleOnlyDuringWorkHours,ConflictPercentageAllowed,MaximumConflictInstances,RequestInPolicy,RequestOutOfPolicy
+```
+
+- `AllowConflicts` : accepter ou non une réservation sur une plage déjà occupée.
+- `AllowRecurringMeetings` : permettre ou interdire les réunions récurrentes.
+- `BookingWindowInDays` et `MaximumDurationInMinutes` : horizon maximal et durée maximale d'une réservation.
+- `ScheduleOnlyDuringWorkHours` : limiter les réservations aux heures de travail configurées pour la ressource.
+- `RequestInPolicy` / `RequestOutOfPolicy` : autoriser certains utilisateurs à **demander** une réservation nécessitant une décision humaine, selon qu'elle respecte ou dépasse les règles standard. Contrairement à `BookInPolicy`, ces demandes ne signifient pas « réserver automatiquement ».
+
+### Une Room List pour trouver les salles dans Outlook
+
+Il existe deux objets différents au nom proche :
+
+- La **Room List d'une ABP** est une **Address List Exchange** utilisée dans la politique de carnet d'adresses.
+- La **Room List utilisée par Room Finder** est un **groupe de distribution spécial**, contenant des boîtes de salle, généralement par bâtiment ou site.
+
+```powershell
+New-DistributionGroup -Name "Salles Nantes" -RoomList
+
+Add-DistributionGroupMember `
+    -Identity "Salles Nantes" `
+    -Member "Salle Filiale 1"
+```
+
+La création de ce groupe ne remplace ni les règles de réservation de la salle ni les Address Lists d'une ABP.
+
 ## 5. Dossiers publics : une infrastructure distincte des boîtes partagées
 
 Les dossiers publics servent à partager une arborescence commune de messages, calendriers, contacts ou autres contenus. Ils ne sont pas équivalents à une boîte partagée : leur modèle repose sur des dossiers et des permissions propres à chacun d'eux.
@@ -298,6 +557,21 @@ On peut enfin activer la messagerie pour un dossier public si l'on souhaite qu'i
 ```powershell
 Enable-MailPublicFolder -Identity "\Filiale\Infrastructure"
 ```
+
+### Exploitation : quotas, rétention et diagnostic des dossiers publics
+
+Les dossiers publics possèdent aussi des paramètres de **quota** et de **rétention**, configurables au niveau de l'organisation ou de certains dossiers. Leur fonctionnement ne se limite pas aux droits `Owner` et `Author`.
+
+```powershell
+Get-PublicFolderStatistics |
+    Select-Object Name,ItemCount,TotalItemSize
+
+Get-PublicFolderItemStatistics -Identity "\Filiale\Infrastructure"
+
+Get-PublicFolderClientPermission -Identity "\Filiale"
+```
+
+Pour diagnostiquer des problèmes de hiérarchie, on peut également utiliser `Get-PublicFolderMailboxDiagnostics` et `Update-PublicFolderMailbox`, avec précaution. Dans le cas de boîtes de dossiers publics stockées dans un **DAG**, la disponibilité provient des copies de la **base Exchange**, pas d'une réplication indépendante du contenu entre toutes les boîtes de dossiers publics.
 
 ## 6. Domaine accepté : ce qu'Exchange accepte réellement en SMTP
 
@@ -375,6 +649,16 @@ Get-Mailbox "alice" |
 Une EAP ne reconfigure pas le routage SMTP. Elle attribue des adresses aux destinataires. Le domaine doit être accepté par Exchange et les politiques sont évaluées par priorité : **un destinataire n'est géré que par une politique d'adresses à la fois**.
 
 Si `EmailAddressPolicyEnabled` vaut `$false` pour une boîte, celle-ci ne suit plus automatiquement les modèles de la politique : c'est notamment à vérifier en cas d'adresse gérée manuellement.
+
+Pour contrôler l'ordre des politiques, **le plus petit numéro de priorité est le plus prioritaire**. La politique par défaut est évaluée en dernier.
+
+```powershell
+Get-EmailAddressPolicy |
+    Sort-Object Priority |
+    Format-Table Name,Priority
+```
+
+Une politique prioritaire dont le filtre englobe trop de destinataires peut empêcher une politique plus spécifique de s'appliquer, même si son modèle d'adresse semble correct.
 
 ### Comprendre l'attribut AD `proxyAddresses`
 
@@ -627,6 +911,17 @@ L'absence d'un droit dans cette vérification ne suffit pas toujours à conclure
 
 Si les permissions semblent correctes, effectuer le même test dans **Outlook sur le Web** peut aider à isoler un problème propre au client Outlook classique.
 
+#### Autre panne possible : boîte masquée dans les listes d'adresses
+
+Ce n'est **pas toujours un OAB ancien** : Microsoft documente aussi qu'une boîte masquée des listes d'adresses peut empêcher un délégué d'**ouvrir la boîte avec `FullAccess`** ou d'**envoyer en `Send As` / `Send on Behalf`**, malgré des permissions accordées côté serveur.
+
+```powershell
+Get-Mailbox "direction" |
+    Format-List HiddenFromAddressListsEnabled
+```
+
+En dépannage, distinguer donc trois questions : **la permission existe-t-elle ?** ; **la boîte est-elle visible et résoluble ?** ; **Outlook possède-t-il une ancienne entrée locale ?** Éviter de résoudre une difficulté de délégation en accordant davantage de permissions sans diagnostic.
+
 #### Rafraîchir la résolution dans Outlook
 
 1. Dans le message, supprimer l'ancienne entrée du champ **De**.
@@ -797,6 +1092,9 @@ En cas de comportement inattendu, quelques vérifications permettent de remonter
 | Une adresse SMTP attendue manque | Domaine accepté, filtre/priorité EAP, `EmailAddressPolicyEnabled`, application de la politique |
 | Un utilisateur manque dans une GAL | `CustomAttribute`, `RecipientFilter`, `HiddenFromAddressListsEnabled`, actualisation de la GAL |
 | Un groupe dynamique ne reçoit pas les bons membres | Filtre du DDG, conteneur de destinataires, prévisualisation `Get-Recipient` |
+| Impossible d’ouvrir une Linked Mailbox | Relation d’approbation, compte lié actif, LinkedMasterAccount, connectivité et résolution d’identité |
+| Mail User visible mais courrier non reçu | ExternalEmailAddress, targetAddress et routage vers le système distant |
+| Une délégation échoue alors que le droit existe | HiddenFromAddressListsEnabled, résolution de la boîte, OAB et cache Outlook |
 | Une salle accepte les demandes de tout le monde | `AllBookInPolicy`, `BookInPolicy`, délégués et mode de traitement |
 | Outlook affiche d'anciennes informations | OAB généré et téléchargé, mode cache, reconnexion du client |
 | Un utilisateur voit le mauvais carnet | `AddressBookPolicy` de sa boîte et cohérence GAL/Address Lists/OAB |
@@ -806,7 +1104,7 @@ En cas de comportement inattendu, quelques vérifications permettent de remonter
 
 La difficulté dans Exchange Server n'est pas tant de créer un objet que de comprendre **à quel niveau il intervient**.
 
-- Les **boîtes** stockent les messages et les calendriers.
+- Les **boîtes** stockent les messages et les calendriers ; une **Linked Mailbox** permet d’utiliser une boîte Exchange avec l’identité d’une autre forêt AD approuvée.
 - Les **groupes de distribution** contrôlent la diffusion à plusieurs destinataires, avec membres fixes ou filtrés.
 - Les **politiques de réservation** décident comment une salle traite les demandes.
 - Les **dossiers publics** proposent une arborescence partagée avec des permissions spécifiques.
@@ -816,6 +1114,15 @@ La difficulté dans Exchange Server n'est pas tant de créer un objet que de com
 Ces composants peuvent être assemblés dans une seule organisation Exchange pour accompagner une filiale, une séparation métier ou une évolution de l'annuaire. Mais la cohérence des filtres et des attributs est déterminante, et une segmentation visuelle ne doit jamais être confondue avec une véritable isolation de sécurité.
 
 ## Références Microsoft
+
+- [Linked mailboxes dans Exchange Server : principe, création et vérification](https://learn.microsoft.com/fr-fr/exchange/recipients/linked-mailboxes)
+- [New-Mailbox : LinkedMasterAccount, LinkedDomainController et LinkedCredential](https://learn.microsoft.com/fr-fr/powershell/module/exchangepowershell/new-mailbox)
+- [Préparer une migration de boîtes entre forêts : attribut msExchMasterAccountSid](https://learn.microsoft.com/en-us/exchange/architecture/mailbox-servers/prep-mailboxes-for-cross-forest-moves)
+- [Enable-MailUser : adresse de destination externe](https://learn.microsoft.com/fr-fr/powershell/module/exchangepowershell/enable-mailuser)
+- [Gestion des autorisations des destinataires et limites des boîtes masquées](https://learn.microsoft.com/fr-fr/exchange/recipients/mailbox-permissions)
+- [Add-MailboxFolderPermission : droits sur les calendriers](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/add-mailboxfolderpermission)
+- [New-DistributionGroup : groupes de salles RoomList](https://learn.microsoft.com/fr-fr/powershell/module/exchangepowershell/new-distributiongroup)
+- [Set-DistributionGroup : restrictions d’envoi et modération](https://learn.microsoft.com/fr-fr/powershell/module/exchangepowershell/set-distributiongroup)
 
 - [Recipients in Exchange Server](https://learn.microsoft.com/en-us/exchange/recipients/recipients)
 - [Manage permissions for recipients](https://learn.microsoft.com/en-us/exchange/recipients/mailbox-permissions)

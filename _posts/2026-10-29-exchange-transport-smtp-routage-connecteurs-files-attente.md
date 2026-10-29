@@ -20,6 +20,8 @@ L'objectif est de suivre le parcours d'un message, puis de disposer d'une métho
 
 > **Versions :** les mécanismes décrits concernent Exchange Server 2016/2019 et, pour l'essentiel, Exchange Server Subscription Edition (SE). Les interfaces illustrées sont celles d'Exchange 2019. **Le support d'Exchange Server 2016 et 2019 a pris fin le 14 octobre 2025** ; en 2026, la version cible pour une infrastructure on-premises pérenne est Exchange Server SE. Les opérations d'administration doivent être vérifiées sur la version réellement déployée.
 
+> **Captures de laboratoire :** les captures originales utilisées pour rédiger ce tutoriel documentent les connecteurs de réception, une session SMTP interactive, les journaux SMTP, Queue Viewer, les files en PowerShell, le pipeline de transport, la topologie des coûts AD et une politique DLP. Les explications ci-dessous s'appuient sur ces observations. Les images elles-mêmes ne sont pas encore hébergées dans le dépôt du blog et ne sont donc pas insérées sous forme de liens cassés.
+
 ## 1. Les trois étages du pipeline de transport Exchange
 
 Sur un serveur Exchange de rôle Mailbox, trois composants doivent être distingués :
@@ -546,6 +548,37 @@ Référence : [Microsoft Learn — Gestion des files](https://learn.microsoft.co
 
 Il ne s'agit donc ni de sauvegardes historiques des boîtes, ni de substituts à une stratégie de restauration. Leur efficacité dépend de la topologie, du nombre de serveurs disponibles et de leur configuration.
 
+### Mini-tutoriel : examiner Shadow Redundancy et Safety Net sans changer leurs paramètres
+
+Shadow Redundancy et Safety Net protègent **des étapes différentes**. Leur présence ne doit pas être traitée comme une sauvegarde récupérable à volonté. Les valeurs par défaut sont généralement adaptées à une architecture qui comporte suffisamment de serveurs.
+
+**1. Relever la configuration globale actuelle :**
+
+```powershell
+Get-TransportConfig |
+    Format-List ShadowRedundancyEnabled,
+                RejectMessageOnShadowFailure,
+                ShadowMessagePreferenceSetting,
+                ShadowResubmitTimeSpan,
+                SafetyNetHoldTime
+```
+
+**2. Examiner les files du serveur observé :**
+
+```powershell
+Get-Queue -Server "LON-EX1" |
+    Format-Table Identity,DeliveryType,Status,
+                 MessageCount,NextHopDomain -AutoSize
+```
+
+Une file `ShadowRedundancy` contenant des messages ne signifie pas en soi une panne. Une copie secondaire est conservée temporairement pour permettre une reprise en cas d'échec du traitement primaire.
+
+**3. Contrôler les capacités de redondance.** Shadow Redundancy nécessite un autre serveur Transport éligible (dans le même DAG lorsqu'il y a un DAG, ou dans le site AD en dehors d'un DAG). En dessous de cette capacité, activer un paramètre ne crée pas magiquement une seconde copie sur une autre machine.
+
+**4. Éviter de désactiver la redondance pour faire disparaître une file.** `ShadowRedundancyEnabled` concerne l'organisation entière. La durée `SafetyNetHoldTime` doit être comparée aux stratégies de copies retardées et aux objectifs de récupération avant toute modification.
+
+Sources : [Shadow Redundancy](https://learn.microsoft.com/en-us/exchange/mail-flow/transport-high-availability/shadow-redundancy) et [Safety Net](https://learn.microsoft.com/en-us/exchange/mail-flow/transport-high-availability/safety-net).
+
 ## 5. Les trois niveaux de diagnostic : tracking, protocole SMTP et file
 
 Pour déterminer où un message est bloqué, il faut éviter de mélanger trois sources d'information :
@@ -772,37 +805,6 @@ Le comportement exact dépend du connecteur, de l'adresse cliente, des droits de
 
 **Attention :** Telnet ne permet pas de tester correctement une session sécurisée nécessitant STARTTLS et une authentification. Un outil SMTP compatible TLS est nécessaire pour ce type de validation.
 
-### Mini-tutoriel : examiner Shadow Redundancy et Safety Net sans changer leurs paramètres
-
-Shadow Redundancy et Safety Net protègent **des étapes différentes**. Leur présence ne doit pas être traitée comme une sauvegarde récupérable à volonté. Les valeurs par défaut sont généralement adaptées à une architecture qui comporte suffisamment de serveurs.
-
-**1. Relever la configuration globale actuelle :**
-
-```powershell
-Get-TransportConfig |
-    Format-List ShadowRedundancyEnabled,
-                RejectMessageOnShadowFailure,
-                ShadowMessagePreferenceSetting,
-                ShadowResubmitTimeSpan,
-                SafetyNetHoldTime
-```
-
-**2. Examiner les files du serveur observé :**
-
-```powershell
-Get-Queue -Server "LON-EX1" |
-    Format-Table Identity,DeliveryType,Status,
-                 MessageCount,NextHopDomain -AutoSize
-```
-
-Une file `ShadowRedundancy` contenant des messages ne signifie pas en soi une panne. Une copie secondaire est conservée temporairement pour permettre une reprise en cas d'échec du traitement primaire.
-
-**3. Contrôler les capacités de redondance.** Shadow Redundancy nécessite un autre serveur Transport éligible (dans le même DAG lorsqu'il y a un DAG, ou dans le site AD en dehors d'un DAG). En dessous de cette capacité, activer un paramètre ne crée pas magiquement une seconde copie sur une autre machine.
-
-**4. Éviter de désactiver la redondance pour faire disparaître une file.** `ShadowRedundancyEnabled` concerne l'organisation entière. La durée `SafetyNetHoldTime` doit être comparée aux stratégies de copies retardées et aux objectifs de récupération avant toute modification.
-
-Sources : [Shadow Redundancy](https://learn.microsoft.com/en-us/exchange/mail-flow/transport-high-availability/shadow-redundancy) et [Safety Net](https://learn.microsoft.com/en-us/exchange/mail-flow/transport-high-availability/safety-net).
-
 ## 7. Pickup et Replay : réinjecter des messages dans le transport
 
 Les répertoires **Pickup** et **Replay** permettent de soumettre des fichiers au pipeline de transport sans ouvrir une session SMTP ordinaire.
@@ -870,6 +872,54 @@ Dans le laboratoire, une politique `UK Financial Data` apparaît dans l'EAC en m
 
 
 Des agents tiers peuvent également être développés ou déployés. Ils disposent d'un accès puissant aux messages et doivent être évalués avec prudence : une erreur ou un ralentissement dans un agent peut affecter l'ensemble du flux.
+
+### Mini-tutoriel : inspecter une politique DLP et tester une règle de transport
+
+Dans la capture du laboratoire, la politique **`UK Financial Data`** est affichée dans l'EAC avec le mode `Enforcing`. Ce seul écran ne permet pas de conclure qu'un message particulier a été bloqué : il faut examiner les conditions, actions et exceptions de ses règles.
+
+**1. Inventorier la politique et les règles Exchange :**
+
+```powershell
+Get-DlpPolicy |
+    Format-Table Name,State,Mode -AutoSize
+
+Get-DlpPolicy "UK Financial Data" | Format-List *
+
+Get-TransportRule |
+    Format-Table Name,State,Mode,Priority -AutoSize
+```
+
+En Exchange **on-premises**, `Get-DlpPolicy` concerne les anciennes politiques DLP fondées sur les règles de transport. Il ne doit pas être confondu avec les stratégies Microsoft Purview de Microsoft 365.
+
+**2. Créer un exemple de règle sans bloquer la messagerie.** Le mode `Audit` permet de tester une condition et de consigner le résultat sans appliquer les actions qui affecteraient la remise :
+
+```powershell
+New-TransportRule `
+    -Name "LAB - Audit mots clés sortants" `
+    -SentToScope NotInOrganization `
+    -SubjectContainsWords "DEMO-CONFIDENTIEL" `
+    -SetAuditSeverity High `
+    -Mode Audit
+```
+
+**3. Vérifier et tester.** Envoyer un message de test vers une adresse externe autorisée, avec le mot clé dans l'objet, puis examiner le suivi de message et la configuration de la règle :
+
+```powershell
+Get-TransportRule "LAB - Audit mots clés sortants" |
+    Format-List Name,State,Mode,Priority,Description
+```
+
+Un mode `Audit` n'a pas la même portée qu'un blocage actif. La règle d'exemple teste un **mot-clé**, pas un vrai détecteur de données financières : une politique DLP utilise des conditions plus spécialisées.
+
+**4. Nettoyage après le laboratoire :**
+
+```powershell
+Remove-TransportRule "LAB - Audit mots clés sortants"
+```
+
+Les règles sont partagées par les serveurs Mailbox d'une même organisation Exchange ; même en mode Audit, un test doit être circonscrit et approuvé sur une plateforme de production.
+
+Références : [Get-DlpPolicy](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/get-dlppolicy) et [New-TransportRule](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/new-transportrule).
 
 ## 9. Méthode de dépannage : un message est accepté, mais il n'arrive pas
 

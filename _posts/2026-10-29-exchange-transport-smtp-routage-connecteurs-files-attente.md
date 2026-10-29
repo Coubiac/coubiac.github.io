@@ -37,9 +37,9 @@ Le service logique **Mailbox Transport** comprend deux services Windows :
 
 La communication **entre Mailbox Transport et la base locale** utilise RPC. Cela ne signifie pas que les clients Outlook modernes utilisent RPC pour accéder aux boîtes : la connectivité client relève notamment de MAPI/HTTP. Il s'agit ici du **fonctionnement interne** des services Exchange.
 
-![Architecture Front End Transport, Transport et Mailbox Transport dans Exchange](/assets/images/exchange-transport/transport-pipeline-architecture.png)
+![Architecture Front End Transport, Transport et Mailbox Transport dans Exchange](/assets/images/exchange-transport/transport-pipeline-redessine.svg)
 
-*Le Front End Transport accepte et proxifie les connexions SMTP sans file locale. Le service Transport assure le traitement, la catégorisation et les files d'attente, tandis que Mailbox Transport communique avec la base via RPC.*
+*Schéma vectoriel pédagogique : le Front End Transport accepte et proxifie les connexions SMTP sans file locale. Le service Transport traite les messages et leurs files d'attente ; Mailbox Transport fait le lien avec la base via RPC.*
 
 
 ### Exemple : courrier entrant depuis Internet
@@ -326,9 +326,9 @@ Une activation de copie sur un autre membre du DAG change la localisation de la 
 
 Exchange réutilise la topologie des **sites et liens de sites Active Directory** pour évaluer les routes et leurs coûts. Il est donc important que les sous-réseaux, sites et liens AD reflètent correctement l'implantation des serveurs.
 
-![Schéma des sites Active Directory et coûts de routage Exchange](/assets/images/exchange-transport/routing-site-costs.png)
+![Schéma des sites Active Directory et coûts de routage Exchange](/assets/images/exchange-transport/routing-site-costs-redessine.svg)
 
-*Les nombres affichés correspondent à des coûts de liens AD, et non à une latence en millisecondes. Exchange peut remettre directement au groupe de destination même si le calcul du meilleur chemin s'appuie sur plusieurs sites intermédiaires.*
+*Schéma vectoriel pédagogique : les coûts AD désignent des préférences de routage (10 + 10 = 20, contre 20 + 20 = 40), pas des durées en millisecondes. Exchange tente une remise SMTP directe au groupe de destination lorsque les conditions le permettent, sauf contrainte de transit comme un hub site.*
 
 
 Le routage privilégie le **chemin au coût calculé le plus faible**, puis applique ses règles de départage. En cas d'indisponibilité de la destination, des mécanismes de repli peuvent faire intervenir des sites intermédiaires.

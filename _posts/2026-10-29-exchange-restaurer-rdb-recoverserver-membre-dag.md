@@ -74,7 +74,7 @@ Examiner le champ `State` :
 - `Clean Shutdown` : la base peut normalement être montée sans relecture complémentaire des journaux.
 - `Dirty Shutdown` : il faut d'abord effectuer une *soft recovery* si les journaux nécessaires sont présents.
 
-Exemple avec le préfixe de journal `E01` (à identifier dans **ton** jeu de fichiers, et non à recopier aveuglément) :
+Exemple avec le préfixe de journal `E01` (à identifier dans les fichiers restaurés, et non à recopier sans vérification) :
 
 ```powershell
 eseutil /r E01 /l "D:\RDB" /d "D:\RDB"

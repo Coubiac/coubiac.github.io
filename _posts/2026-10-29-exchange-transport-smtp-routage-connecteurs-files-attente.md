@@ -341,13 +341,110 @@ Get-ADSiteLink |
 
 Un **hub site** peut imposer le transit par un site AD situé sur la route de coût minimal. Ce n'est cependant pas une raison pour reproduire systématiquement une topologie SMTP personnalisée : la centralisation des infrastructures Exchange et les DAG multisites rendent certaines anciennes pratiques moins pertinentes.
 
-### Groupes de distribution : le rôle du serveur d'expansion
+#### Mini-tutoriel : configurer un hub site ou un coût de lien Exchange
 
-Une liste de distribution contenant des destinataires dispersés sur plusieurs sites peut entraîner une **expansion** du message vers plusieurs destinations. Dans une grande organisation, cela complique le diagnostic : les traces de remise sont réparties sur plusieurs serveurs et plusieurs chemins.
+**Un hub site Exchange n'est pas un point de passage à créer systématiquement.** Il permet d'imposer une étape de transport lorsque le site est situé sur le **chemin de routage de coût minimal**. Un site déclaré hub mais situé en dehors de ce chemin ne devient pas un relais obligatoire.
 
-La désignation d'un **serveur d'expansion** pour certains groupes permet de maîtriser le point où la liste est développée. C'est une possibilité d'architecture, pas un paramètre à activer sur toutes les listes.
+Avant toute modification, recenser les sites et les coûts :
 
-La coexistence de versions d'Exchange ajoute également des règles de sélection des groupes de remise. La topologie observée en migration mérite donc d'être examinée plutôt que déduite du seul coût des liens AD.
+```powershell
+Get-ADSite |
+    Format-Table Name,HubSiteEnabled -AutoSize
+
+Get-ADSiteLink |
+    Format-Table Name,ExchangeCost -AutoSize
+```
+
+Sur `Get-ADSiteLink`, une valeur `ExchangeCost` absente signifie qu'Exchange utilise le coût du lien IP Active Directory, au lieu d'un coût Exchange distinct. La modification des **coûts Exchange** permet d'influer sur le routage des messages sans nécessairement changer la réplication AD.
+
+Exemple de changement **illustratif**, uniquement après validation du plan de routage :
+
+```powershell
+Set-ADSite -Identity "SITE-HUB" -HubSiteEnabled $true
+
+Set-ADSiteLink -Identity "LIEN-A-B" -ExchangeCost 20
+```
+
+Vérifier :
+
+```powershell
+Get-ADSite "SITE-HUB" | Format-List Name,HubSiteEnabled
+Get-ADSiteLink "LIEN-A-B" | Format-List Name,ExchangeCost
+```
+
+**Retour arrière :** supprimer la qualité de hub avec `-HubSiteEnabled $false`; pour le coût, restaurer la valeur sauvegardée avant intervention (ou `$null` si aucun coût Exchange explicite n'était défini).
+
+Ce réglage est **organisationnel** : il doit être validé avec les équipes qui administrent la topologie AD et le transport. Il n'améliore pas mécaniquement la disponibilité ; au contraire, un hub imposé peut devenir un point de concentration supplémentaire.
+
+*Lecture de la capture du TP :* les chiffres positionnés sur les liens représentent des **coûts logiques**, pas des durées de transmission en millisecondes.
+
+Source : [Microsoft Learn — Routage Exchange par sites AD](https://learn.microsoft.com/en-us/exchange/mail-flow/mail-routing/mail-routing).
+
+### Mini-tutoriel : expansion des groupes de distribution, comportement automatique et configuration
+
+Lorsqu'un message est envoyé à un groupe de distribution, Exchange doit **résoudre les membres du groupe**. Le categorizer effectue cette expansion, puis crée les destinataires et les chemins de remise appropriés. Les groupes imbriqués et les groupes dynamiques impliquent des opérations supplémentaires de résolution.
+
+**Par défaut, Exchange choisit automatiquement un serveur d'expansion disponible et approprié.** La propriété `ExpansionServer` est vide (`$null`). Il n'y a donc généralement **rien à configurer**.
+
+On peut néanmoins imposer un serveur précis pour un besoin particulier. Ce n'est pas une prescription de la *Preferred Architecture* : si ce serveur devient indisponible, les messages envoyés aux groupes concernés ne peuvent plus être remis normalement. Dans une architecture privilégiant la résilience, il faut donc **préférer le choix automatique**.
+
+**1. Repérer les groupes déjà configurés avec un serveur fixe.**
+
+```powershell
+Get-DistributionGroup -ResultSize Unlimited |
+    Where-Object { $_.ExpansionServer } |
+    Format-Table DisplayName,ExpansionServer -AutoSize
+
+Get-DynamicDistributionGroup -ResultSize Unlimited |
+    Where-Object { $_.ExpansionServer } |
+    Format-Table DisplayName,ExpansionServer -AutoSize
+```
+
+**2. Vérifier le groupe ciblé.**
+
+```powershell
+Get-DistributionGroup "Liste-Generale" |
+    Format-List DisplayName,ExpansionServer,RecipientTypeDetails
+```
+
+**3. Exemple de configuration explicite, à réserver à un besoin justifié.**
+
+```powershell
+$LegacyDN = (Get-ExchangeServer "LON-EX2").ExchangeLegacyDN
+
+Set-DistributionGroup -Identity "Liste-Generale" `
+    -ExpansionServer $LegacyDN
+```
+
+Le paramètre `-ExpansionServer` attend le **`ExchangeLegacyDN`** du serveur, pas simplement son FQDN. Le serveur doit disposer du rôle Mailbox avec le service Transport approprié.
+
+**4. Vérifier et revenir au fonctionnement automatique.**
+
+```powershell
+Get-DistributionGroup "Liste-Generale" |
+    Format-List DisplayName,ExpansionServer
+
+Set-DistributionGroup -Identity "Liste-Generale" `
+    -ExpansionServer $null
+```
+
+Pour un groupe de distribution dynamique, utiliser `Get-DynamicDistributionGroup` et `Set-DynamicDistributionGroup` avec le même paramètre `-ExpansionServer`. L'appartenance d'un groupe dynamique résulte de son filtre de destinataires ; la définition du serveur d'expansion **ne remplace pas le filtre**.
+
+**5. Vérifier l'expansion d'un message test.** Après l'envoi à une liste, rechercher les événements `EXPAND` dans les journaux de suivi des serveurs concernés :
+
+```powershell
+Get-MessageTrackingLog -Server "LON-EX2" `
+    -Start (Get-Date).AddHours(-1) `
+    -EventId EXPAND |
+    Select-Object Timestamp,ServerHostname,RelatedRecipientAddress,
+                  MessageId,NetworkMessageId
+```
+
+L'absence d'événement sur ce serveur ne prouve pas l'échec de l'expansion : si `ExpansionServer` est vide, elle a pu avoir lieu **sur un autre serveur de transport**. Dans une organisation multisite, élargir la recherche en conséquence.
+
+**Pourquoi conserver le comportement automatique ?** Un DAG réplique les bases, mais **ne rend pas automatiquement hautement disponible un serveur d'expansion imposé par configuration**. La fonctionnalité reste supportée en Exchange Server SE ; son usage est simplement à justifier.
+
+Références : [Set-DistributionGroup](https://learn.microsoft.com/en-us/powershell/module/exchange/set-distributiongroup) et [Set-DynamicDistributionGroup](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/set-dynamicdistributiongroup).
 
 ## 4. Les files d'attente : où s'arrête un message ?
 
@@ -399,6 +496,47 @@ Retry-Queue -Identity "LON-EX1\5"
 ```
 
 Il ne faut pas exécuter des suppressions massives ou des reprises répétées avant de comprendre le **`LastError`** et les conséquences sur la destination.
+
+### Mini-tutoriel : traiter une file de remise en `Retry`
+
+**Situation observée dans le TP.** La file `LON-EX1\5` contient deux messages. Son `DeliveryType` est `SmartHostConnectorDelivery` et son état est `Retry`.
+
+**1. Identifier la destination et la cause.**
+
+```powershell
+Get-Queue -Identity "LON-EX1\5" |
+    Format-List Identity,Status,DeliveryType,NextHopDomain,
+                MessageCount,LastError,LastRetryTime,NextRetryTime
+
+Get-Message -Queue "LON-EX1\5" |
+    Format-Table Identity,FromAddress,Recipients,Status -AutoSize
+```
+
+`LastError` et les protocol logs sont souvent plus utiles que l'état `Retry` seul. Il faut rechercher un échec DNS, TLS, une indisponibilité du smart host ou un refus SMTP temporaire.
+
+**2. Corriger la cause.** Un connecteur qui vise un smart host hors service ne sera pas réparé par `Retry-Queue`. Il faut d'abord remettre le prochain saut en état de répondre.
+
+**3. Forcer une nouvelle tentative après correction.**
+
+```powershell
+Retry-Queue -Identity "LON-EX1\5"
+
+Get-Queue -Identity "LON-EX1\5" |
+    Format-List Status,MessageCount,LastError,NextRetryTime
+```
+
+**4. Distinguer `Retry` de `Resubmit`.** L'option `-Resubmit $true` renvoie les messages vers la file `Submission` pour qu'ils soient **recatégorisés** ; ce n'est pas une simple nouvelle connexion SMTP. Elle ne s'applique qu'aux files prises en charge, notamment certaines files de remise en `Retry` et `Unreachable` :
+
+```powershell
+# Uniquement si une nouvelle catégorisation est nécessaire
+# Retry-Queue -Identity "LON-EX1\5" -Resubmit $true
+```
+
+Cette commande ne doit pas être utilisée comme première réponse à une panne de smart host. Sur une file très volumineuse, elle peut provoquer un nouveau traitement important.
+
+**5. Comparer avec Queue Viewer.** Dans Exchange Toolbox, ouvrir **Queue Viewer**, sélectionner la file concernée, consulter `Last Error` et la liste des messages, puis utiliser **Retry Queue** si la cause a été corrigée. La capture du TP montre précisément ce rapprochement entre l'interface et `Get-Queue`.
+
+Référence : [Microsoft Learn — Gestion des files](https://learn.microsoft.com/en-us/exchange/mail-flow/queues/queue-procedures).
 
 ### Shadow Redundancy et Safety Net ne jouent pas le même rôle
 

@@ -584,6 +584,51 @@ Get-MessageTrackingLog -Server "LON-EX2" `
 
 Un `SEND` sur un serveur ne vaut pas forcément `DELIVER` dans la boîte finale : il peut simplement indiquer la remise au saut SMTP suivant.
 
+### Mini-tutoriel : suivre un message sur plusieurs serveurs
+
+**Situation.** Une application indique que le message a été accepté avec `250`, mais la boîte du destinataire reste vide. Un `RECEIVE` ou `SEND` isolé n'explique pas le trajet complet.
+
+**1. Choisir une fenêtre de recherche courte et relever le `MessageId`.**
+
+```powershell
+$Debut = (Get-Date).AddHours(-1)
+$Fin   = Get-Date
+
+Get-MessageTrackingLog -Server "LON-EX1" `
+    -Start $Debut -End $Fin `
+    -Recipients "beth@adatum.com" |
+    Sort-Object Timestamp |
+    Format-Table Timestamp,EventId,Source,MessageId -AutoSize
+```
+
+**2. Une fois le Message-Id identifié, interroger les services Transport de tous les serveurs concernés.**
+
+```powershell
+$MessageId = "<identifiant@domaine>"  # Exemple à remplacer
+
+$Historique = foreach ($Serveur in (Get-TransportService)) {
+    Get-MessageTrackingLog -Server $Serveur.Name `
+        -Start $Debut -End $Fin `
+        -MessageId $MessageId `
+        -ResultSize Unlimited `
+        -ErrorAction Continue
+}
+
+$Historique |
+    Sort-Object Timestamp |
+    Select-Object Timestamp,ServerHostname,EventId,Source,
+                  Sender,Recipients,MessageId,NetworkMessageId |
+    Format-Table -AutoSize
+```
+
+Une recherche globale doit rester **bornée dans le temps** : interroger tous les serveurs sur une grande période peut produire beaucoup d'I/O et de résultats. En environnement très volumineux, cibler d'abord les serveurs traversés est plus efficace.
+
+**3. Interpréter les événements sans confondre les étapes.** `RECEIVE` signifie que le service a reçu le message ; `EXPAND` indique l'expansion d'un groupe ; `SEND` correspond à une remise vers un autre composant ou serveur ; `DELIVER` indique la remise dans une boîte par Exchange ; `DEFER` ou `FAIL` signalent une difficulté ou un échec.
+
+**4. Utiliser le bon identifiant.** `InternalMessageId` change d'un serveur Exchange à l'autre. `MessageId` vient de l'en-tête du courrier, tandis que `NetworkMessageId` est conservé lors de certaines bifurcations liées aux règles ou à l'expansion des groupes. Le `NetworkMessageId` est particulièrement utile pour corréler les branches d'un même message.
+
+Source : [Microsoft Learn — Message tracking](https://learn.microsoft.com/en-us/exchange/mail-flow/transport-logs/message-tracking).
+
 ### Protocol logging : observer le dialogue SMTP
 
 Le protocole SMTP échange des commandes (`EHLO`, `MAIL FROM`, `RCPT TO`, `DATA`, etc.) et des réponses numériques (`220`, `250`, `354`, `4xx`, `5xx`). Les journaux de protocole donnent une visibilité sur ces échanges.
@@ -634,6 +679,54 @@ Dans un fichier `RECV...LOG`, le nom du connecteur, les adresses et ports locaux
 
 **En pratique :** le journal de protocole répond à la question "quelle réponse SMTP a été donnée ?", tandis que le tracking répond à "qu'est devenu ce message dans Exchange ?".
 
+### Mini-tutoriel : activer puis exploiter les protocol logs d'un connecteur
+
+Le suivi de message décrit les événements internes. Le **protocol log**, lui, conserve le dialogue SMTP : commandes, réponses, session, IP et connecteur. Dans le TP, le fichier `RECV...LOG` a été utilisé pour retrouver la session d'un client SMTP.
+
+**1. Vérifier le niveau de journalisation d'un connecteur.**
+
+```powershell
+Get-ReceiveConnector "LON-EX1\CRM Relay" |
+    Format-List Identity,TransportRole,ProtocolLoggingLevel
+
+Get-SendConnector |
+    Format-Table Name,ProtocolLoggingLevel -AutoSize
+```
+
+**2. Activer temporairement le journal détaillé sur le seul connecteur concerné.**
+
+```powershell
+Set-ReceiveConnector "LON-EX1\CRM Relay" `
+    -ProtocolLoggingLevel Verbose
+```
+
+**3. Localiser les fichiers sur le serveur.**
+
+```powershell
+Get-FrontEndTransportService "LON-EX1" |
+    Format-List ReceiveProtocolLogPath,SendProtocolLogPath
+
+Get-TransportService "LON-EX1" |
+    Format-List ReceiveProtocolLogPath,SendProtocolLogPath
+```
+
+Pour un connecteur `FrontEndTransport`, les journaux de réception sont normalement sous `%ExchangeInstallPath%TransportRoles\Logs\FrontEnd\ProtocolLog\SmtpReceive`. Pour le service Transport, ils sont sous `...\Hub\ProtocolLog\SmtpReceive`.
+
+**4. Reproduire le problème et examiner les champs** `date-time`, `connector-id`, `session-id`, `local-endpoint`, `remote-endpoint`, `event` et `data`. Une même session peut comporter plusieurs lignes : le `session-id` évite de mélanger deux connexions simultanées.
+
+**5. Revenir au niveau de journalisation précédent** si le diagnostic le justifie :
+
+```powershell
+Set-ReceiveConnector "LON-EX1\CRM Relay" `
+    -ProtocolLoggingLevel None
+```
+
+Ce retour à `None` n'est approprié que si c'était la **valeur initiale**. En production, noter cette valeur avant modification ; certains connecteurs sont déjà en `Verbose` pour les besoins d'exploitation.
+
+*Lecture de la capture du TP :* les lignes du fichier `RECV` doivent être lues comme **un dialogue de session SMTP**, pas comme une liste de messages remis dans les boîtes. Un `250` après `DATA` atteste la prise en charge par le serveur qui répond.
+
+Source : [Microsoft Learn — Protocol logging](https://learn.microsoft.com/en-us/exchange/mail-flow/connectors/protocol-logging).
+
 ## 6. Tester une connexion SMTP manuellement
 
 Le test de connectivité le plus simple est :
@@ -679,6 +772,37 @@ Le comportement exact dépend du connecteur, de l'adresse cliente, des droits de
 
 **Attention :** Telnet ne permet pas de tester correctement une session sécurisée nécessitant STARTTLS et une authentification. Un outil SMTP compatible TLS est nécessaire pour ce type de validation.
 
+### Mini-tutoriel : examiner Shadow Redundancy et Safety Net sans changer leurs paramètres
+
+Shadow Redundancy et Safety Net protègent **des étapes différentes**. Leur présence ne doit pas être traitée comme une sauvegarde récupérable à volonté. Les valeurs par défaut sont généralement adaptées à une architecture qui comporte suffisamment de serveurs.
+
+**1. Relever la configuration globale actuelle :**
+
+```powershell
+Get-TransportConfig |
+    Format-List ShadowRedundancyEnabled,
+                RejectMessageOnShadowFailure,
+                ShadowMessagePreferenceSetting,
+                ShadowResubmitTimeSpan,
+                SafetyNetHoldTime
+```
+
+**2. Examiner les files du serveur observé :**
+
+```powershell
+Get-Queue -Server "LON-EX1" |
+    Format-Table Identity,DeliveryType,Status,
+                 MessageCount,NextHopDomain -AutoSize
+```
+
+Une file `ShadowRedundancy` contenant des messages ne signifie pas en soi une panne. Une copie secondaire est conservée temporairement pour permettre une reprise en cas d'échec du traitement primaire.
+
+**3. Contrôler les capacités de redondance.** Shadow Redundancy nécessite un autre serveur Transport éligible (dans le même DAG lorsqu'il y a un DAG, ou dans le site AD en dehors d'un DAG). En dessous de cette capacité, activer un paramètre ne crée pas magiquement une seconde copie sur une autre machine.
+
+**4. Éviter de désactiver la redondance pour faire disparaître une file.** `ShadowRedundancyEnabled` concerne l'organisation entière. La durée `SafetyNetHoldTime` doit être comparée aux stratégies de copies retardées et aux objectifs de récupération avant toute modification.
+
+Sources : [Shadow Redundancy](https://learn.microsoft.com/en-us/exchange/mail-flow/transport-high-availability/shadow-redundancy) et [Safety Net](https://learn.microsoft.com/en-us/exchange/mail-flow/transport-high-availability/safety-net).
+
 ## 7. Pickup et Replay : réinjecter des messages dans le transport
 
 Les répertoires **Pickup** et **Replay** permettent de soumettre des fichiers au pipeline de transport sans ouvrir une session SMTP ordinaire.
@@ -700,6 +824,27 @@ Get-TransportService "LON-EX1" |
 ```
 
 Dans un incident, il faut d'abord chercher à comprendre **pourquoi** les messages se sont accumulés plutôt qu'à déplacer des fichiers entre dossiers.
+
+### Mini-tutoriel : distinguer les répertoires Pickup et Replay avant toute réinjection
+
+Le support présente les dossiers `Pickup` et `Replay`. Ce sont **deux portes d'entrée différentes** dans le service de transport, à ne pas confondre avec des files de messages ordinaires ni avec une méthode de sauvegarde.
+
+**1. Lire les répertoires configurés :**
+
+```powershell
+Get-TransportService "LON-EX1" |
+    Format-List PickupDirectoryPath,ReplayDirectoryPath
+```
+
+**2. Choisir le dossier correspondant au format du message.** `Pickup` peut traiter un message mis au bon format texte avec en-têtes MIME valides. `Replay` est destiné aux messages soumis dans un format d'export adapté, notamment les messages exportés d'une file Exchange. Déplacer n'importe quel fichier `.eml` dans `Replay` ne constitue pas une procédure générale fiable.
+
+**3. Dans une récupération d'incident, examiner l'enveloppe et la provenance** : destinataires, présence d'un expéditeur valide, risque de doublons et état précédent de la remise. Une réinjection mal maîtrisée peut produire des messages dupliqués ou une nouvelle boucle.
+
+**4. Valider le résultat dans les journaux** (`RECEIVE`, `SEND`, `DELIVER`, etc.), pas uniquement en constatant que le fichier a disparu du répertoire.
+
+Pour une file existante en `Retry`, les commandes `Get-Queue` et `Retry-Queue` sont les premiers outils à envisager **avant** une exportation manuelle vers Replay.
+
+Référence : [Microsoft Learn — Procédures pour les files d'attente](https://learn.microsoft.com/en-us/exchange/mail-flow/queues/queue-procedures).
 
 ## 8. Les agents de transport et les règles de conformité
 

@@ -123,6 +123,65 @@ Il ne s'agit donc pas de la même logique qu'un reverse proxy HTTP fondé sur un
 
 > **Sécurité :** un connecteur permettant de relayer vers des domaines tiers ne doit jamais être exposé à toutes les IP clientes. Pour un relais applicatif anonyme, il faut créer un connecteur dédié, limiter précisément `RemoteIPRanges` et n'attribuer les droits de relais qu'aux systèmes autorisés. Modifier à l'aveugle le connecteur `Default Frontend` peut transformer une passerelle Exchange en relais ouvert.
 
+#### Mini-tutoriel : créer un connecteur de relais pour une application
+
+**Situation.** Un ERP à l'adresse `192.0.2.20` doit utiliser Exchange comme relais SMTP. L'adresse IP et les noms du laboratoire sont fictifs. Dans ce cas, créer un connecteur de réception **dédié** est préférable à l'extension des permissions du connecteur `Default Frontend`.
+
+**1. Recenser les connecteurs existants et vérifier les IP autorisées.**
+
+```powershell
+Get-ReceiveConnector -Server "LON-EX1" |
+    Format-Table Identity,TransportRole,Bindings,RemoteIPRanges -AutoSize
+```
+
+**2. Créer un connecteur Front End Transport dédié à l'IP de l'application.**
+
+```powershell
+New-ReceiveConnector -Server "LON-EX1" `
+    -Name "CRM Relay" `
+    -TransportRole FrontendTransport `
+    -Custom `
+    -Bindings 0.0.0.0:25 `
+    -RemoteIPRanges 192.0.2.20
+```
+
+Le connecteur peut partager le port 25 avec les connecteurs standard : Exchange choisit la **plage d'IP distante la plus spécifique**. Le filtrage par IP ne distingue toutefois pas deux machines derrière une même adresse NAT.
+
+**3. N'autoriser le relais externe que si l'application en a besoin.** Le connecteur nouvellement créé n'accorde pas automatiquement le droit de relayer vers des domaines tiers. Microsoft documente la configuration minimale suivante pour un relais anonyme contrôlé :
+
+```powershell
+$Connector = "LON-EX1\CRM Relay"
+
+Set-ReceiveConnector $Connector -PermissionGroups AnonymousUsers
+
+Get-ReceiveConnector $Connector |
+    Add-ADPermission `
+        -User "NT AUTHORITY\ANONYMOUS LOGON" `
+        -ExtendedRights "Ms-Exch-SMTP-Accept-Any-Recipient"
+```
+
+**4. Vérifier les autorisations et tester les flux.**
+
+```powershell
+Get-ReceiveConnector $Connector |
+    Format-List Identity,Bindings,RemoteIPRanges,
+                AuthMechanism,PermissionGroups,ProtocolLoggingLevel
+
+Get-ADPermission $Connector -User "NT AUTHORITY\ANONYMOUS LOGON" |
+    Where-Object { -not $_.Deny -and -not $_.IsInherited } |
+    Format-Table User,ExtendedRights -Wrap
+```
+
+Effectuer un envoi SMTP depuis l'ERP vers un destinataire interne, puis externe, et contrôler la trace. Faire également un test depuis une **IP non autorisée** : elle ne doit pas pouvoir utiliser les permissions de relais de ce connecteur. La protection du réseau et du serveur émetteur reste essentielle, même lorsque `RemoteIPRanges` est restrictif.
+
+**Retour arrière.** Un connecteur dédié peut être désactivé pendant le diagnostic avec `Set-ReceiveConnector $Connector -Enabled $false`, puis supprimé avec `Remove-ReceiveConnector $Connector` après validation de l'impact. Cela n'enlève pas d'éventuels autres droits ajoutés ailleurs.
+
+La configuration `ExternalAuthoritative` avec `ExchangeServers` existe, mais elle accorde des permissions très étendues. Elle ne doit pas devenir la solution par défaut pour les applications et copieurs.
+
+*Lecture des captures du TP :* l'écran `CRM Relay` permet de repérer le connecteur dédié, tandis que le journal `SmtpReceive` permet de vérifier quel connecteur a réellement accepté la session.
+
+Source : [Microsoft Learn — Relais SMTP anonyme](https://learn.microsoft.com/fr-fr/exchange/mail-flow/connectors/allow-anonymous-relay).
+
 ### Send connectors : choisir la sortie
 
 Le connecteur d'envoi détermine comment Exchange doit remettre le message lorsqu'il sort de son périmètre de transport :
@@ -147,6 +206,48 @@ Dans une architecture utilisant une passerelle SMTP, Exchange peut remettre les 
 
 **À ne pas confondre :** une adresse IP de *smart host* dans un Send connector n'est pas une destination finale de boîte aux lettres ; c'est le prochain serveur chargé de poursuivre la remise.
 
+#### Mini-tutoriel : créer un connecteur sortant vers un smart host
+
+**Situation.** Tout le courrier sortant doit transiter par une passerelle de sécurité SMTP, par exemple `smtp-relay.adatum.com` (nom fictif).
+
+**1. Examiner les connecteurs déjà présents.** Vérifier les espaces d'adressage et leurs coûts avant d'ajouter une nouvelle route :
+
+```powershell
+Get-SendConnector |
+    Format-Table Name,Enabled,AddressSpaces,
+                 SourceTransportServers,SmartHosts -AutoSize
+```
+
+**2. Créer un connecteur de sortie via le relais :**
+
+```powershell
+New-SendConnector `
+    -Name "Sortie via passerelle" `
+    -Usage Custom `
+    -AddressSpaces "*" `
+    -DNSRoutingEnabled $false `
+    -SmartHosts "smtp-relay.adatum.com" `
+    -SourceTransportServers "LON-EX1","LON-EX2"
+```
+
+Le `*` désigne les destinations SMTP non gérées localement. `DNSRoutingEnabled $false` signifie qu'Exchange envoie vers le smart host au lieu de se connecter directement aux MX des destinataires. Les éventuelles exigences de TLS ou d'authentification de la passerelle sont à définir séparément.
+
+**3. Vérifier la configuration :**
+
+```powershell
+Get-SendConnector "Sortie via passerelle" |
+    Format-List Name,Enabled,AddressSpaces,DNSRoutingEnabled,
+                SmartHosts,SmartHostAuthMechanism,
+                SourceTransportServers,RequireTLS,
+                ProtocolLoggingLevel
+```
+
+**4. Tester depuis une boîte Exchange**, suivre le message dans les tracking logs et vérifier le serveur SMTP qui reçoit effectivement le message. Un événement `SEND` vers la passerelle prouve le transfert au prochain saut, pas forcément la remise dans la boîte distante.
+
+**Retour arrière :** `Set-SendConnector "Sortie via passerelle" -Enabled $false` désactive la route pour vérifier le comportement prévu des autres connecteurs. Ne pas désactiver une route de production sans avoir défini l'alternative.
+
+Source : [Microsoft Learn — Connecteurs d'envoi](https://learn.microsoft.com/en-us/exchange/mail-flow/connectors/send-connectors).
+
 ### Un domaine SMTP partagé entre Exchange et un autre système
 
 Le routage est plus délicat lorsque le même domaine SMTP possède des destinataires sur **Exchange et sur une autre plateforme**, par exemple Postfix.
@@ -159,6 +260,43 @@ Get-AcceptedDomain |
 ```
 
 Le fonctionnement n'est pas automatique du seul fait d'avoir choisi `InternalRelay` : les objets destinataires et le chemin de routage vers le système tiers doivent être correctement configurés. Sinon, le risque est de créer une **boucle de routage**, ou de rejeter un destinataire pourtant existant sur l'autre système.
+
+### Mini-tutoriel : partager un domaine entre Exchange et une autre messagerie
+
+**Situation.** Les adresses `@adatum.com` existent à la fois sur Exchange et sur une plateforme SMTP tierce, par exemple Postfix. Le domaine peut être défini comme `InternalRelay`, mais ce paramètre ne crée **pas** le chemin de routage.
+
+**1. Vérifier le type actuel du domaine :**
+
+```powershell
+Get-AcceptedDomain "adatum.com" |
+    Format-List Name,DomainName,DomainType,AddressBookEnabled
+```
+
+**2. Le cas échéant, basculer ce domaine en relais interne :**
+
+```powershell
+Set-AcceptedDomain -Identity "adatum.com" -DomainType InternalRelay
+```
+
+Cette modification est **globale à l'organisation Exchange** : vérifier préalablement les objets destinataires, les flux entrants et la capacité de la plateforme tierce à remettre à Exchange les destinataires Exchange. Pour un domaine `InternalRelay` dont certains destinataires ne sont pas présents dans l'annuaire, `AddressBookEnabled` doit normalement rester à `$false` pour le filtrage de destinataires.
+
+**3. Prévoir la sortie des destinataires non résolus localement.** Exemple avec un smart host tiers fictif `smtp-tiers.adatum.net` :
+
+```powershell
+New-SendConnector `
+    -Name "Relais vers messagerie tierce" `
+    -Usage Custom `
+    -AddressSpaces "adatum.com" `
+    -DNSRoutingEnabled $false `
+    -SmartHosts "smtp-tiers.adatum.net" `
+    -SourceTransportServers "LON-EX1","LON-EX2"
+```
+
+**4. Tester trois scénarios :** un destinataire Exchange, un destinataire du système tiers et une adresse inexistante. Une boucle SMTP indique souvent que chaque plateforme renvoie à l'autre un destinataire qu'aucune ne connaît.
+
+**Retour arrière :** rétablir le `DomainType` d'origine **seulement si le flux antérieur est encore valide**, et désactiver le connecteur de relais si nécessaire. Il ne faut pas basculer aveuglément vers `Authoritative` tant que le domaine est partagé.
+
+Source : [Microsoft Learn — Domaines acceptés](https://learn.microsoft.com/en-us/exchange/mail-flow/accepted-domains/accepted-domains).
 
 ## 3. Le routage interne : bases, DAG, sites Active Directory et coûts
 

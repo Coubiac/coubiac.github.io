@@ -37,7 +37,9 @@ Le service logique **Mailbox Transport** comprend deux services Windows :
 
 La communication **entre Mailbox Transport et la base locale** utilise RPC. Cela ne signifie pas que les clients Outlook modernes utilisent RPC pour accéder aux boîtes : la connectivité client relève notamment de MAPI/HTTP. Il s'agit ici du **fonctionnement interne** des services Exchange.
 
-Le Front End Transport ne possède pas de file de messages. Le Transport service assure la catégorisation et les files de soumission et de remise, tandis que Mailbox Transport accède à la base via RPC.
+![Architecture Front End Transport, Transport et Mailbox Transport dans Exchange](/assets/images/exchange-transport/transport-pipeline-architecture.png)
+
+*Le Front End Transport accepte et proxifie les connexions SMTP sans file locale. Le service Transport assure le traitement, la catégorisation et les files d'attente, tandis que Mailbox Transport communique avec la base via RPC.*
 
 
 ### Exemple : courrier entrant depuis Internet
@@ -71,7 +73,9 @@ Le processus débute dans la boîte d'envoi de l'utilisateur. **Mailbox Transpor
 
 Le message peut rester interne à l'organisation, être transmis à une autre organisation SMTP ou sortir via une passerelle, un équipement de sécurité ou un *smart host*.
 
-La distinction entre Submission Queue, Categorizer, Delivery Queues et les répertoires Pickup/Replay fournit plusieurs points d'observation lors d'un incident.
+![Vue détaillée du pipeline Exchange avec Submission, Categorizer, Delivery et Pickup/Replay](/assets/images/exchange-transport/transport-pipeline-detail.png)
+
+*Détail du pipeline : les files Submission et Delivery, le Categorizer et les répertoires Pickup/Replay représentent des étapes distinctes où observer la circulation d'un message.*
 
 
 ## 2. Connecteurs SMTP : qui accepte le message et vers où l'envoyer ?
@@ -102,7 +106,9 @@ Les valeurs sont celles des connecteurs créés par défaut ; une configuration 
 
 Dans le laboratoire, un connecteur nommé **`CRM Relay`** apparaît à côté des connecteurs standards de `LON-EX1` :
 
-Un même serveur peut recevoir des flux très différents : Internet, applications métier, copieurs ou serveurs Exchange. Ces flux n'exigent pas nécessairement les mêmes autorisations ni la même journalisation.
+![Connecteurs Receive Exchange dont CRM Relay dans l'EAC](/assets/images/exchange-transport/eac-connecteurs-reception.png)
+
+*La capture montre un connecteur dédié aux applications en plus des connecteurs standards. Chaque flux peut nécessiter ses propres plages IP, permissions et paramètres de journalisation.*
 
 
 Exemple d'inventaire dans l'Exchange Management Shell :
@@ -320,7 +326,9 @@ Une activation de copie sur un autre membre du DAG change la localisation de la 
 
 Exchange réutilise la topologie des **sites et liens de sites Active Directory** pour évaluer les routes et leurs coûts. Il est donc important que les sous-réseaux, sites et liens AD reflètent correctement l'implantation des serveurs.
 
-Les coûts de liens AD ne représentent pas des latences en millisecondes. Une route de coût minimal ne signifie pas que les messages traversent physiquement chaque site intermédiaire : Exchange peut remettre directement au delivery group de destination.
+![Schéma des sites Active Directory et coûts de routage Exchange](/assets/images/exchange-transport/routing-site-costs.png)
+
+*Les nombres affichés correspondent à des coûts de liens AD, et non à une latence en millisecondes. Exchange peut remettre directement au groupe de destination même si le calcul du meilleur chemin s'appuie sur plusieurs sites intermédiaires.*
 
 
 Le routage privilégie le **chemin au coût calculé le plus faible**, puis applique ses règles de départage. En cas d'indisponibilité de la destination, des mécanismes de repli peuvent faire intervenir des sites intermédiaires.
@@ -476,7 +484,9 @@ Le statut `Retry` signifie qu'Exchange **réessaiera la remise**. Il n'indique p
 
 L'outil **Queue Viewer**, accessible depuis Exchange Toolbox, permet d'examiner les files d'un serveur, puis de consulter les messages qu'elles contiennent.
 
-Dans le laboratoire, deux messages se trouvent dans `LON-EX1\5`. L'examen de la file permet d'identifier sa destination et son état avant toute tentative de reprise.
+![Queue Viewer Exchange affichant la file LON-EX1 et les messages en attente](/assets/images/exchange-transport/queue-viewer.png)
+
+*Queue Viewer permet de repérer les deux messages présents dans la file du laboratoire et d'en examiner l'état avant de déclencher un nouvel essai.*
 
 
 En PowerShell :
@@ -497,7 +507,9 @@ Get-Message -Queue "LON-EX1\5" |
     Format-Table Identity,FromAddress,Status,Subject -AutoSize
 ```
 
-Un exemple du TP présente une file `SmartHostConnectorDelivery` en `Retry` avec deux messages, et une file `ShadowRedundancy` distincte. Les deux mécanismes ne doivent pas être confondus.
+![Commandes Get-Queue et Get-Message dans Exchange Management Shell](/assets/images/exchange-transport/ems-queues.png)
+
+*La console montre une file SmartHostConnectorDelivery en Retry avec deux messages et une file ShadowRedundancy distincte. Il faut examiner le LastError de la première sans confondre son état avec la redondance.*
 
 
 Lorsqu'une cause externe a été corrigée, il est possible de provoquer un nouvel essai :
@@ -717,7 +729,9 @@ Get-TransportService "LON-EX1" |
     Format-List *ProtocolLogPath
 ```
 
-Dans un fichier `RECV...LOG`, le nom du connecteur, les adresses et ports locaux/distants, l'identifiant de session et les échanges SMTP permettent notamment de vérifier qu'un relais applicatif utilise le bon connecteur.
+![Journaux SMTP Receive d'Exchange montrant les sessions du protocole](/assets/images/exchange-transport/smtp-protocol-logs.png)
+
+*Dans les fichiers RECV, le nom du connecteur, les adresses et ports, l'identifiant de session et les réponses SMTP permettent de vérifier le dialogue réellement établi avec Exchange.*
 
 
 **En pratique :** le journal de protocole répond à la question "quelle réponse SMTP a été donnée ?", tandis que le tracking répond à "qu'est devenu ce message dans Exchange ?".
@@ -802,7 +816,9 @@ QUIT
 
 La ligne vide sépare les en-têtes SMTP du corps du message. Le **point seul sur une ligne** termine la commande `DATA`.
 
-Pendant un test SMTP, `HELO` sans domaine peut entraîner `501 5.5.4 Invalid domain name`. Un en-tête `Subject:` envoyé avant `DATA` est interprété comme une commande SMTP et peut renvoyer `500 5.5.3`. Après `DATA`, le serveur peut accepter le message et l'inscrire pour remise.
+![Dialogue SMTP en Telnet avec réponses 501 500 354 et 250](/assets/images/exchange-transport/exemple-session-smtp.png)
+
+*La session illustre des erreurs de syntaxe SMTP : HELO sans nom de domaine, puis Subject transmis avant DATA. Une réponse 250 après le point final confirme la prise en charge par le serveur, pas la distribution finale.*
 
 
 Trois réponses doivent être interprétées correctement :
@@ -878,7 +894,9 @@ Les règles de transport et les politiques DLP n'ont pas le même rôle qu'un co
 
 Une capture du laboratoire illustre une politique **`UK Financial Data`** dotée d'une règle portant sur les messages adressés à l'extérieur de l'organisation, avec une condition liée à la présence d'informations financières :
 
-Dans le laboratoire, une politique `UK Financial Data` apparaît dans l'EAC en mode `Enforcing`. Cela ne prouve pas qu'un message donné a été bloqué : il faut vérifier les conditions et les actions des règles.
+![Politique DLP UK Financial Data dans l'EAC Exchange](/assets/images/exchange-transport/eac-dlp-policy.png)
+
+*La politique UK Financial Data apparaît en mode Enforcing. Cette configuration n'établit pas, à elle seule, qu'un message particulier a été bloqué : les règles et les événements doivent être examinés.*
 
 
 Des agents tiers peuvent également être développés ou déployés. Ils disposent d'un accès puissant aux messages et doivent être évalués avec prudence : une erreur ou un ralentissement dans un agent peut affecter l'ensemble du flux.

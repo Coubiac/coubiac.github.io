@@ -20,8 +20,6 @@ L'objectif est de suivre le parcours d'un message, puis de disposer d'une métho
 
 > **Versions :** les mécanismes décrits concernent Exchange Server 2016/2019 et, pour l'essentiel, Exchange Server Subscription Edition (SE). Les interfaces illustrées sont celles d'Exchange 2019. **Le support d'Exchange Server 2016 et 2019 a pris fin le 14 octobre 2025** ; en 2026, la version cible pour une infrastructure on-premises pérenne est Exchange Server SE. Les opérations d'administration doivent être vérifiées sur la version réellement déployée.
 
-> **Captures de laboratoire :** les captures originales utilisées pour rédiger ce tutoriel documentent les connecteurs de réception, une session SMTP interactive, les journaux SMTP, Queue Viewer, les files en PowerShell, le pipeline de transport, la topologie des coûts AD et une politique DLP. Les explications ci-dessous s'appuient sur ces observations. Les images elles-mêmes ne sont pas encore hébergées dans le dépôt du blog et ne sont donc pas insérées sous forme de liens cassés.
-
 ## 1. Les trois étages du pipeline de transport Exchange
 
 Sur un serveur Exchange de rôle Mailbox, trois composants doivent être distingués :
@@ -389,6 +387,18 @@ Lorsqu'un message est envoyé à un groupe de distribution, Exchange doit **rés
 **Par défaut, Exchange choisit automatiquement un serveur d'expansion disponible et approprié.** La propriété `ExpansionServer` est vide (`$null`). Il n'y a donc généralement **rien à configurer**.
 
 On peut néanmoins imposer un serveur précis pour un besoin particulier. Ce n'est pas une prescription de la *Preferred Architecture* : si ce serveur devient indisponible, les messages envoyés aux groupes concernés ne peuvent plus être remis normalement. Dans une architecture privilégiant la résilience, il faut donc **préférer le choix automatique**.
+
+
+```mermaid
+flowchart TD
+    A["Message adressé à un groupe"] --> B{"ExpansionServer défini ?"}
+    B -->|"Non : valeur par défaut"| C["Sélection automatique par Exchange"]
+    B -->|"Oui"| D["Serveur désigné"]
+    D -->|"Disponible"| E["Expansion du groupe"]
+    D -->|"Indisponible"| F["Remise impossible tant que la dépendance demeure"]
+    C --> E
+    E --> G["Résolution des destinataires puis routage"]
+```
 
 **1. Repérer les groupes déjà configurés avec un serveur fixe.**
 
@@ -940,6 +950,59 @@ Exchange dispose d'un mécanisme de **back pressure** : le service Transport sur
 Les symptômes peuvent ressembler à un problème réseau, alors que la cause est un volume saturé ou une file de transport trop importante. Les événements du journal **Application**, avec la source `MSExchangeTransport`, fournissent alors des indications utiles.
 
 La base des files de transport mérite donc une attention particulière au dimensionnement. Son emplacement peut être séparé du volume système lorsque la conception de la plateforme le justifie.
+
+### Mini-tutoriel : reconnaître un `back pressure` avant de modifier les connecteurs
+
+Quand Exchange cesse d'accepter certains messages SMTP, la cause peut être **locale au serveur Transport**, et non un défaut d'autorisation ou de routage. Le `back pressure` protège le service lorsqu'une ressource (disque, mémoire, base des files ou file Submission) devient insuffisante.
+
+**1. Chercher les événements Transport de gestion de ressources :**
+
+```powershell
+Get-WinEvent -ComputerName "LON-EX1" -FilterHashtable @{
+    LogName   = "Application"
+    Id        = 15004,15005,15006,15007
+    StartTime = (Get-Date).AddHours(-4)
+} | Where-Object { $_.ProviderName -eq "MSExchangeTransport" } |
+    Select-Object TimeCreated,Id,Message |
+    Format-List
+```
+
+Les événements **15004** et **15005** concernent les changements de niveau de pression, **15006** signale un manque critique d'espace disque et **15007** une pression mémoire critique. Le détail de l'événement précise la ressource concernée.
+
+**2. Vérifier les files et les volumes :**
+
+```powershell
+Get-Queue -Server "LON-EX1" |
+    Format-Table Identity,Status,MessageCount,DeliveryType -AutoSize
+
+Get-CimInstance Win32_LogicalDisk -ComputerName "LON-EX1" -Filter "DriveType=3" |
+    Select-Object DeviceID,Size,FreeSpace
+```
+
+**3. Corriger la ressource en cause** plutôt que désactiver le `back pressure` ou augmenter aveuglément les seuils. La base des files et ses journaux sont distincts des bases de boîtes aux lettres : surveiller les volumes correspondants.
+
+**4. Confirmer la baisse de pression**, puis vérifier de nouveau les connexions SMTP et les files. Un redémarrage précipité du service Transport n'est pas un diagnostic et peut provoquer une interruption supplémentaire.
+
+Source : [Microsoft Learn — Back pressure](https://learn.microsoft.com/en-us/exchange/mail-flow/back-pressure).
+
+### Mini-tutoriel : obtenir une vue des files à l'échelle d'un DAG
+
+Une inspection via `Get-Queue -Server` ne concerne **qu'un serveur**. Pour une vue synthétique de plusieurs serveurs, `Get-QueueDigest` peut agréger les résultats :
+
+```powershell
+Get-QueueDigest -Dag "DAG1" -Filter "Status -eq 'Retry'" |
+    Format-Table ServerIdentity,QueueIdentity,MessageCount,Status -AutoSize
+```
+
+**Limites :** cette synthèse a une certaine latence et, par défaut, peut ignorer les files comportant moins de dix messages. Elle ne remplace pas `Get-Queue` et `Get-Message` lorsqu'un incident ne concerne que quelques messages.
+
+Pour un incident précis, utiliser ensuite :
+
+```powershell
+Get-Queue -Server "LON-EX1" -Exclude Empty
+```
+
+Source : [Microsoft Learn — Procédures pour les files](https://learn.microsoft.com/en-us/exchange/mail-flow/queues/queue-procedures).
 
 ## Conclusion
 

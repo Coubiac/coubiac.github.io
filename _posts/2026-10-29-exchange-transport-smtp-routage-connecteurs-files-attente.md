@@ -37,7 +37,7 @@ Le service logique **Mailbox Transport** comprend deux services Windows :
 
 La communication **entre Mailbox Transport et la base locale** utilise RPC. Cela ne signifie pas que les clients Outlook modernes utilisent RPC pour accéder aux boîtes : la connectivité client relève notamment de MAPI/HTTP. Il s'agit ici du **fonctionnement interne** des services Exchange.
 
-![Architecture Front End Transport, Transport et Mailbox Transport dans Exchange](/assets/images/exchange-transport/transport-pipeline-redessine.svg)
+![Architecture Front End Transport, Transport et Mailbox Transport dans Exchange](/assets/images/exchange-transport/transport-pipeline-architecture.png)
 
 *Schéma vectoriel pédagogique : le Front End Transport accepte et proxifie les connexions SMTP sans file locale. Le service Transport traite les messages et leurs files d'attente ; Mailbox Transport fait le lien avec la base via RPC.*
 

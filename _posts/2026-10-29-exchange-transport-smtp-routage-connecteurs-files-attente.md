@@ -326,7 +326,7 @@ Une activation de copie sur un autre membre du DAG change la localisation de la 
 
 Exchange réutilise la topologie des **sites et liens de sites Active Directory** pour évaluer les routes et leurs coûts. Il est donc important que les sous-réseaux, sites et liens AD reflètent correctement l'implantation des serveurs.
 
-![Schéma des sites Active Directory et coûts de routage Exchange](/assets/images/exchange-transport/routing-site-costs-redessine.svg)
+![Schéma des sites Active Directory et coûts de routage Exchange](/assets/images/exchange-transport/routing-site-costs-cours.svg)
 
 *Schéma vectoriel pédagogique : les coûts AD désignent des préférences de routage (10 + 10 = 20, contre 20 + 20 = 40), pas des durées en millisecondes. Exchange tente une remise SMTP directe au groupe de destination lorsque les conditions le permettent, sauf contrainte de transit comme un hub site.*
 

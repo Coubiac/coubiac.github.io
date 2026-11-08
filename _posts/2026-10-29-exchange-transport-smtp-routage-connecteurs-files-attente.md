@@ -8,7 +8,8 @@ tags:
   - SMTP
   - PowerShell
   - Active Directory
-  - DAGmermaid: true
+  - DAG
+mermaid: true
 permalink: /articles/exchange-transport-smtp-routage-connecteurs-files-attente/
 ---
 

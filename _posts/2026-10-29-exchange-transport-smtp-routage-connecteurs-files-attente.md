@@ -1,14 +1,14 @@
 ---
 layout: post
+article_type: comprendre
 title: "Exchange Server : comprendre le transport SMTP, le routage et diagnostiquer les files d'attente"
 description: "Du Front End Transport aux bases de boîtes aux lettres : pipeline SMTP, routage par DAG et sites AD, connecteurs, queues, protocol logs et suivi des messages."
 tags:
-  - Exchange Server
+  - Exchange
   - SMTP
   - PowerShell
   - Active Directory
-  - DAG
-mermaid: true
+  - DAGmermaid: true
 permalink: /articles/exchange-transport-smtp-routage-connecteurs-files-attente/
 ---
 

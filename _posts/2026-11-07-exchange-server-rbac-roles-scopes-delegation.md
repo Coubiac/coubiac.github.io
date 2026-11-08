@@ -1,13 +1,13 @@
 ---
 layout: post
+article_type: comprendre
 title: "Exchange Server : comprendre RBAC, les rôles et les délégations d'administration"
 description: "Qui peut exécuter quelle commande Exchange, avec quels paramètres et sur quels objets ? Comprendre les groupes de rôles, attributions, scopes, stratégies utilisateurs et split permissions avec des exemples PowerShell."
 tags:
-  - Exchange Server
+  - Exchange
   - PowerShell
   - Active Directory
-  - Sécurité
-mermaid: true
+  - Sécuritémermaid: true
 ---
 
 Un technicien du support peut consulter une boîte aux lettres dans l'Exchange Admin Center, mais ne peut pas en modifier certaines propriétés. Son collègue, connecté au même serveur, dispose d'un bouton supplémentaire. Un troisième administrateur peut exécuter `Set-Mailbox`, mais uniquement sur les utilisateurs d'une agence.

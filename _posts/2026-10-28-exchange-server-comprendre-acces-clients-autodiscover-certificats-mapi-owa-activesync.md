@@ -1,12 +1,12 @@
 ---
 layout: post
+article_type: comprendre
 title: "Exchange Server : comprendre les accès clients, Autodiscover, MAPI/HTTP, OWA et ActiveSync"
 description: "Architecture Client Access, namespace, DNS, certificats TLS, Autodiscover, MAPI over HTTP, politiques OWA, MailTips et sécurité ActiveSync : comprendre ce qui se passe entre le client et sa boîte Exchange."
 tags:
-  - Exchange Server
+  - Exchange
   - PowerShell
-  - Active Directory
-mermaid: true
+  - Active Directorymermaid: true
 ---
 
 Lorsqu'un utilisateur ouvre Outlook, les messages ne viennent pas directement d'une base Exchange au moyen d'une connexion à un serveur connu à l'avance. Plusieurs composants entrent en jeu : le DNS, Autodiscover, les services Client Access, IIS, les répertoires virtuels, les certificats TLS et, enfin, les services backend qui accèdent aux boîtes aux lettres.

@@ -1,9 +1,14 @@
 ---
 layout: post
+article_type: comprendre
 title: "Exchange DAG : quels serveurs peut-on mettre en maintenance simultanément ?"
 date: 2026-11-07
 description: "Comprendre le calcul des lots de maintenance dans un DAG Exchange de 16 serveurs avec quatre copies par base : réplication, quorum, activation et résilience."
-tags: [Exchange, DAG, haute-disponibilite, maintenance]
+tags:
+  - Exchange
+  - DAG
+  - Haute disponibilité
+  - Maintenance
 ---
 
 # Exchange DAG : quels serveurs peut-on mettre en maintenance simultanément ?

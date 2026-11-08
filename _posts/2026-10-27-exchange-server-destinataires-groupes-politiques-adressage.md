@@ -5,7 +5,8 @@ title: "Exchange Server : comprendre les destinataires, les groupes et les polit
 description: "Boîtes Exchange, Linked Mailboxes entre forêts AD, groupes, délégations, ressources, politiques SMTP et carnets d’adresses : comprendre et administrer les destinataires."
 tags:
   - Exchange
-  - PowerShellmermaid: true
+  - PowerShell
+mermaid: true
 ---
 
 Une organisation Exchange ne se résume pas à des boîtes aux lettres et à un flux SMTP. Elle gère aussi les groupes de distribution, les ressources de calendrier, les dossiers publics, l'attribution des adresses électroniques et la présentation des carnets d'adresses aux utilisateurs.

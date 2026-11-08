@@ -1,11 +1,12 @@
 ---
 layout: post
+article_type: comprendre
 title: "Exchange Server : comprendre la haute disponibilité au-delà du DAG"
 description: "Pourquoi un DAG ne suffit pas à assurer la disponibilité d’Exchange : réplication, accès client, transport SMTP, quorum et résilience multisite."
 tags:
-  - Exchange Server
+  - Exchange
   - Haute disponibilité
-mermaid: true
+  - DAGmermaid: true
 published: false
 ---
 

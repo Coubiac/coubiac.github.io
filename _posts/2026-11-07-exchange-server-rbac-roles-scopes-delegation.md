@@ -7,7 +7,8 @@ tags:
   - Exchange
   - PowerShell
   - Active Directory
-  - Sécuritémermaid: true
+  - Sécurité
+mermaid: true
 ---
 
 Un technicien du support peut consulter une boîte aux lettres dans l'Exchange Admin Center, mais ne peut pas en modifier certaines propriétés. Son collègue, connecté au même serveur, dispose d'un bouton supplémentaire. Un troisième administrateur peut exécuter `Set-Mailbox`, mais uniquement sur les utilisateurs d'une agence.

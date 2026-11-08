@@ -6,7 +6,8 @@ description: "Deux forêts AD, deux organisations Exchange, domaine SMTP partag�
 tags:
   - Exchange
   - Active Directory
-  - PowerShellmermaid: true
+  - PowerShell
+mermaid: true
 ---
 
 Une entreprise rachète une autre entreprise. Sur le papier, les deux sociétés appartiennent désormais au même groupe. Techniquement, rien ne change automatiquement : elles peuvent toujours avoir **deux forêts Active Directory, deux organisations Exchange, deux domaines SMTP, deux annuaires et deux infrastructures de sécurité**.

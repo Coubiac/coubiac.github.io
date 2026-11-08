@@ -1,5 +1,6 @@
 ---
 layout: post
+article_type: tutoriel
 title: "Installer Exchange Server SE sur Windows Server 2025 Core : retour d'expérience"
 description: "Installation d'un second serveur Exchange Subscription Edition sur Windows Server 2025 Core : administration distante, ReFS, UCMA, prérequis et validation PowerShell."
 tags:
@@ -7,6 +8,7 @@ tags:
   - Windows Server
   - PowerShell
   - Server Core
+featured: true
 ---
 
 Installer Exchange Server Subscription Edition (SE) sur **Windows Server 2025 Core** n'est pas fondamentalement compliqué : le programme d'installation prend en charge le mode sans assistance. En pratique, ce sont souvent les opérations qui précèdent l'installation — administration distante, stockage, prérequis et dépendances — qui demandent le plus d'attention.

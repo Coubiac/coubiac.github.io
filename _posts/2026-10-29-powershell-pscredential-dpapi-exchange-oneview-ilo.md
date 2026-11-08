@@ -1,15 +1,16 @@
 ---
 layout: post
+article_type: tutoriel
 title: "PowerShell : conserver et réutiliser des identifiants avec PSCredential et DPAPI"
 description: "Comprendre Get-Credential, Export-Clixml et Import-Clixml, puis réutiliser un compte pour administrer Exchange et interroger les API HPE OneView et iLO."
 tags:
   - PowerShell
   - Sécurité
   - API
-  - Exchange Server
+  - Exchange
   - HPE OneView
   - iLO
-permalink: /articles/powershell-pscredential-dpapi-exchange-oneview-ilo/
+  - HPEpermalink: /articles/powershell-pscredential-dpapi-exchange-oneview-ilo/
 ---
 
 Lorsqu'on automatise l'administration d'une infrastructure, le problème des identifiants revient régulièrement : ouvrir une session distante sur **Exchange**, interroger **HPE OneView** ou récupérer les informations matérielles d'un serveur par l'API **Redfish d'iLO**.

@@ -6,7 +6,8 @@ description: "Copies actives et passives, réplication, Active Manager, quorum, 
 tags:
   - Exchange
   - Haute disponibilité
-  - DAGmermaid: true
+  - DAG
+mermaid: true
 ---
 
 Quand on découvre la haute disponibilité dans Exchange Server, le terme "DAG" apparaît très vite.

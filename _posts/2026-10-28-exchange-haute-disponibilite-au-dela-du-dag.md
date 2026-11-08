@@ -6,7 +6,8 @@ description: "Pourquoi un DAG ne suffit pas à assurer la disponibilité d’Exc
 tags:
   - Exchange
   - Haute disponibilité
-  - DAGmermaid: true
+  - DAG
+mermaid: true
 published: false
 ---
 

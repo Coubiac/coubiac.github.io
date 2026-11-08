@@ -10,7 +10,8 @@ tags:
   - Exchange
   - HPE OneView
   - iLO
-  - HPEpermalink: /articles/powershell-pscredential-dpapi-exchange-oneview-ilo/
+  - HPE
+permalink: /articles/powershell-pscredential-dpapi-exchange-oneview-ilo/
 ---
 
 Lorsqu'on automatise l'administration d'une infrastructure, le problème des identifiants revient régulièrement : ouvrir une session distante sur **Exchange**, interroger **HPE OneView** ou récupérer les informations matérielles d'un serveur par l'API **Redfish d'iLO**.

@@ -6,7 +6,8 @@ description: "Architecture Client Access, namespace, DNS, certificats TLS, Autod
 tags:
   - Exchange
   - PowerShell
-  - Active Directorymermaid: true
+  - Active Directory
+mermaid: true
 ---
 
 Lorsqu'un utilisateur ouvre Outlook, les messages ne viennent pas directement d'une base Exchange au moyen d'une connexion à un serveur connu à l'avance. Plusieurs composants entrent en jeu : le DNS, Autodiscover, les services Client Access, IIS, les répertoires virtuels, les certificats TLS et, enfin, les services backend qui accèdent aux boîtes aux lettres.

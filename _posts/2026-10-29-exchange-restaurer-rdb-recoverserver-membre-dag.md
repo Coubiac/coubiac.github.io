@@ -7,7 +7,8 @@ tags:
   - Exchange
   - PowerShell
   - Active Directory
-  - DAGpermalink: /articles/exchange-restaurer-rdb-recoverserver-dag/
+  - DAG
+permalink: /articles/exchange-restaurer-rdb-recoverserver-dag/
 ---
 
 

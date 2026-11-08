@@ -8,7 +8,8 @@ permalink: /search.json
     "title": {{ post.title | jsonify }},
     "description": {{ post.description | default: "" | jsonify }},
     "url": {{ post.url | relative_url | jsonify }},
-    "tags": {{ post.tags | default: empty | jsonify }},
+    "tags": {{ post.tags | jsonify }},
+    "type": {{ post.article_type | default: "comprendre" | jsonify }},
     "content": {{ post.content | markdownify | strip_html | normalize_whitespace | jsonify }}
   }{% unless forloop.last %},{% endunless %}
 {% endfor %}

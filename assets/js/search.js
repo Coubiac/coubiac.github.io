@@ -10,6 +10,8 @@
   const featuredSection = document.querySelector("[data-featured-section]");
   const browseAll = document.querySelector("[data-browse-all]");
   const listHeading = document.querySelector("[data-list-heading]");
+  const filterToggle = document.querySelector("[data-filter-toggle]");
+  const filterPanel = document.querySelector("[data-filter-panel]");
 
   if (!root || !input || !status || cards.length === 0) return;
 
@@ -26,6 +28,24 @@
   let documents = new Map();
 
   input.value = params.get("q") || "";
+
+  const quickTags = new Set(
+    Array.from(document.querySelectorAll("[data-quick-tag]")).map((button) => normalize(button.dataset.tag))
+  );
+
+  const setAdvancedOpen = (open) => {
+    if (!filterPanel || !filterToggle) return;
+    filterPanel.hidden = !open;
+    filterToggle.setAttribute("aria-expanded", String(open));
+  };
+
+  if (activeType || activeTags.some((tag) => !quickTags.has(normalize(tag)))) {
+    setAdvancedOpen(true);
+  }
+
+  filterToggle?.addEventListener("click", () => {
+    setAdvancedOpen(filterPanel?.hidden);
+  });
 
   const fallbackDocument = (card) => ({
     title: card.querySelector("h3")?.textContent || "",
@@ -89,6 +109,11 @@
     typeButtons.forEach((button) => {
       button.setAttribute("aria-pressed", String(activeType === button.dataset.type));
     });
+
+    if (filterToggle) {
+      const advancedActive = Boolean(activeType) || activeTags.some((tag) => !quickTags.has(normalize(tag)));
+      filterToggle.classList.toggle("has-active-filters", advancedActive);
+    }
 
     if (featuredSection) featuredSection.hidden = filtering || showAll;
     if (browseAll) browseAll.hidden = filtering || showAll;

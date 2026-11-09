@@ -4,36 +4,48 @@ title: Mes notes d'admin
 description: Administration système, infrastructures de messagerie, automatisation PowerShell et retours d'expérience techniques.
 search: true
 ---
-<section class="hero hero-home">
-  <p class="eyebrow">Administration système · Notes de terrain</p>
-  <h1>Mes notes d'admin</h1>
-  <p class="lead">Tutoriels, scripts et retours d'expérience autour d'Exchange, de PowerShell, de la messagerie et des infrastructures IT.</p>
-</section>
+<h1 class="visually-hidden">Mes notes d'admin</h1>
 
 <section id="recherche" class="article-browser js-only" data-search-root data-index-url="{{ '/search.json' | relative_url }}" aria-labelledby="recherche-articles">
-  <div class="search-panel">
+  <div class="search-toolbar">
     <div class="search-field">
-      <label for="article-search" id="recherche-articles">Rechercher dans les articles</label>
+      <label class="visually-hidden" for="article-search" id="recherche-articles">Rechercher dans les articles</label>
       <div class="search-control">
-        <input id="article-search" type="search" placeholder="Exchange, DAG, Redfish, PowerShell…" autocomplete="off" data-search-input>
-        <button type="button" class="search-clear" data-search-clear hidden>Effacer les filtres</button>
+        <input id="article-search" type="search" placeholder="Rechercher un article (Exchange, DAG, PowerShell…)" autocomplete="off" data-search-input>
+        <button type="button" class="search-clear" data-search-clear hidden>Effacer</button>
       </div>
     </div>
+    <button type="button" class="advanced-toggle" data-filter-toggle aria-controls="filtres-avances" aria-expanded="false">Filtres</button>
+  </div>
 
+  {% assign popular_tags = "Exchange|PowerShell|HPE|SMTP|Sécurité" | split: "|" %}
+  <fieldset class="tag-filters quick-filters">
+    <legend class="visually-hidden">Filtrer par technologie</legend>
+    <div class="tag-filter-list" aria-label="Filtres cumulables par technologie">
+      {% for tag in popular_tags %}
+        {% if site.tags[tag].size > 0 %}
+          <button type="button" class="tag-filter" data-tag="{{ tag | escape }}" data-quick-tag aria-pressed="false">
+            {{ tag }}
+          </button>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <div id="filtres-avances" class="advanced-filter-panel" data-filter-panel hidden>
+    {% assign sorted_tags = site.tags | sort %}
     <fieldset class="tag-filters">
-      <legend>Explorer par technologie ou sujet</legend>
-      <div class="tag-filter-list" aria-label="Filtres cumulables par technologie">
-        {% assign popular_tags = "Exchange|PowerShell|HPE|Cisco IronPort|SMTP|Sécurité|API" | split: "|" %}
-        {% for tag in popular_tags %}
-          {% if site.tags[tag].size > 0 %}
-            <button type="button" class="tag-filter" data-tag="{{ tag | escape }}" aria-pressed="false">
-              {{ tag }} <span>{{ site.tags[tag].size }}</span>
+      <legend>Autres technologies et sujets</legend>
+      <div class="tag-filter-list">
+        {% for tag in sorted_tags %}
+          {% unless popular_tags contains tag[0] %}
+            <button type="button" class="tag-filter" data-tag="{{ tag[0] | escape }}" aria-pressed="false">
+              {{ tag[0] }}
             </button>
-          {% endif %}
+          {% endunless %}
         {% endfor %}
       </div>
     </fieldset>
-
     <fieldset class="tag-filters">
       <legend>Type d'article</legend>
       <div class="tag-filter-list" aria-label="Filtrer par type d'article">

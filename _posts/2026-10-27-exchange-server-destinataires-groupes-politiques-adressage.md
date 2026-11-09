@@ -1,9 +1,10 @@
 ---
 layout: post
+article_type: comprendre
 title: "Exchange Server : comprendre les destinataires, les groupes et les politiques d'adressage"
 description: "Boîtes Exchange, Linked Mailboxes entre forêts AD, groupes, délégations, ressources, politiques SMTP et carnets d’adresses : comprendre et administrer les destinataires."
 tags:
-  - Exchange Server
+  - Exchange
   - PowerShell
 mermaid: true
 ---

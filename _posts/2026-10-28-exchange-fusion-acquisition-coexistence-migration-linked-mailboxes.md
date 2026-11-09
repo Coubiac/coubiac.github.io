@@ -1,9 +1,10 @@
 ---
 layout: post
+article_type: comprendre
 title: "Exchange Server : intégrer la messagerie après le rachat d'une entreprise"
 description: "Deux forêts AD, deux organisations Exchange, domaine SMTP partagé, coexistence, Linked Mailboxes ou migration inter-forêts : quelles architectures choisir après une acquisition ?"
 tags:
-  - Exchange Server
+  - Exchange
   - Active Directory
   - PowerShell
 mermaid: true

@@ -1,10 +1,12 @@
 ---
 layout: post
+article_type: comprendre
 title: "Cisco Secure Email (IronPort) : comprendre le parcours d'un mail entrant"
 description: "Comprendre pas à pas le traitement d'un mail entrant dans Cisco Secure Email Gateway : Listener, HAT, Sender Groups, Mail Flow Policies, RAT, LDAP, MAIL FROM, From, SPF, DKIM, DMARC, Work Queue et routage."
 tags:
-  - Cisco Secure Email
+  - Cisco IronPort
   - Messagerie
+  - SMTP
 ---
 
 Cisco Secure Email Gateway, encore souvent appelé **IronPort** ou **Cisco ESA**, ne traite pas un mail entrant comme un simple enchaînement "antispam puis antivirus".

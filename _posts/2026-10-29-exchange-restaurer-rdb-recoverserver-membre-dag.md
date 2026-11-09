@@ -1,9 +1,10 @@
 ---
 layout: post
+article_type: tutoriel
 title: "Exchange Server : restaurer une boîte aux lettres, une base et un membre de DAG"
 description: "Récupérer des messages avec une Recovery Database, suivre une MailboxRestoreRequest et reconstruire un serveur Exchange ou un membre de DAG avec RecoverServer."
 tags:
-  - Exchange Server
+  - Exchange
   - PowerShell
   - Active Directory
   - DAG

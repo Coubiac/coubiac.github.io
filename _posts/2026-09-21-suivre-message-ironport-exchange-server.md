@@ -1,10 +1,12 @@
 ---
 layout: post
+article_type: tutoriel
 title: "Suivre un message de bout en bout entre Cisco IronPort et Exchange Server"
 description: "Une méthode de diagnostic pour corréler le Message Tracking Cisco IronPort avec les journaux de transport Exchange dans une infrastructure composée de plusieurs serveurs et d'un DAG."
 tags:
-  - Exchange Server
+  - Exchange
   - SMTP
+  - Cisco IronPort
 ---
 
 Lorsqu'un utilisateur signale qu'un message n'est pas arrivé, la première difficulté consiste à déterminer où il s'est arrêté. Dans une infrastructure composée de plusieurs serveurs Exchange et de passerelles Cisco IronPort distinctes pour les flux entrants et sortants, il n'existe pas de suivi global unique.

@@ -1,9 +1,10 @@
 ---
 layout: post
+article_type: comprendre
 title: "Exchange Server : comprendre les accès clients, Autodiscover, MAPI/HTTP, OWA et ActiveSync"
 description: "Architecture Client Access, namespace, DNS, certificats TLS, Autodiscover, MAPI over HTTP, politiques OWA, MailTips et sécurité ActiveSync : comprendre ce qui se passe entre le client et sa boîte Exchange."
 tags:
-  - Exchange Server
+  - Exchange
   - PowerShell
   - Active Directory
 mermaid: true

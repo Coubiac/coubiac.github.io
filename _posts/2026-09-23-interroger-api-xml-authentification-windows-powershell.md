@@ -1,5 +1,6 @@
 ---
 layout: post
+article_type: tutoriel
 title: Interroger une API XML avec authentification Windows en PowerShell
 description: Récupérer en PowerShell des données XML accessibles depuis Excel avec l'authentification Windows.
 tags:

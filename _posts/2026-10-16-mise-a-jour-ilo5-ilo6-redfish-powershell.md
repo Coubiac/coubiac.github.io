@@ -1,9 +1,15 @@
 ---
 layout: post
+article_type: tutoriel
 title: "Mettre à jour les firmwares HPE iLO 5 et iLO 6 en PowerShell 5.1 avec Redfish"
 date: 2026-10-16
-categories: [Administration, HPE]
-tags: [HPE, iLO, Redfish, PowerShell, firmware]
+tags:
+  - HPE
+  - iLO
+  - Redfish
+  - PowerShell
+  - Firmware
+  - API
 description: "Mettre à jour une carte HPE iLO 5 ou 6 sans iLOrest ni PowerShell 7 grâce à l'API Redfish HttpPushUri et aux classes .NET."
 ---
 

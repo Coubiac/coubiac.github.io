@@ -1,9 +1,10 @@
 ---
 layout: post
+article_type: comprendre
 title: "Exchange Server : comprendre RBAC, les rôles et les délégations d'administration"
 description: "Qui peut exécuter quelle commande Exchange, avec quels paramètres et sur quels objets ? Comprendre les groupes de rôles, attributions, scopes, stratégies utilisateurs et split permissions avec des exemples PowerShell."
 tags:
-  - Exchange Server
+  - Exchange
   - PowerShell
   - Active Directory
   - Sécurité

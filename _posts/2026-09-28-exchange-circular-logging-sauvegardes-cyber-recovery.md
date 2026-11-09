@@ -1,10 +1,12 @@
 ---
 layout: post
+article_type: comprendre
 title: "Exchange Server : Circular Logging, sauvegardes, Preferred Architecture et ransomware"
 description: "Circular Logging, copies DAG, lagged copy et sauvegarde indépendante : quels incidents chaque mécanisme permet-il de couvrir ?"
 tags:
-  - Exchange Server
+  - Exchange
   - Sauvegarde
+  - DAG
 ---
 
 Quand on commence à s'intéresser sérieusement aux sauvegardes Exchange, une question revient rapidement : pourquoi faut-il généralement désactiver le Circular Logging lorsqu'on utilise un logiciel de sauvegarde Exchange-aware ?

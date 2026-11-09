@@ -1,75 +1,113 @@
 ---
 layout: default
 title: Mes notes d'admin
-description: Administration système, PowerShell, Exchange, Linux et API.
+description: Administration système, infrastructures de messagerie, automatisation PowerShell et retours d'expérience techniques.
 search: true
 ---
-<section class="hero">
-  <p class="eyebrow">Administration système</p>
+<section class="hero hero-home">
+  <p class="eyebrow">Administration système · Notes de terrain</p>
   <h1>Mes notes d'admin</h1>
-  <p class="lead">Administration système, PowerShell, Exchange, Linux et API.</p>
+  <p class="lead">Tutoriels, scripts et retours d'expérience autour d'Exchange, de PowerShell, de la messagerie et des infrastructures IT.</p>
 </section>
 
 <section id="recherche" class="article-browser js-only" data-search-root data-index-url="{{ '/search.json' | relative_url }}" aria-labelledby="recherche-articles">
-  <div class="section-heading">
-    <p class="eyebrow">Explorer</p>
-    <h2 id="recherche-articles">Rechercher un article</h2>
-  </div>
-
   <div class="search-panel">
     <div class="search-field">
-      <label for="article-search">Mots-clés</label>
+      <label for="article-search" id="recherche-articles">Rechercher dans les articles</label>
       <div class="search-control">
-        <input id="article-search" type="search" placeholder="Exchange, PowerShell, SMTP..." autocomplete="off" data-search-input>
-        <button type="button" class="search-clear" data-search-clear hidden>Effacer</button>
+        <input id="article-search" type="search" placeholder="Exchange, DAG, Redfish, PowerShell…" autocomplete="off" data-search-input>
+        <button type="button" class="search-clear" data-search-clear hidden>Effacer les filtres</button>
       </div>
     </div>
 
-    {% assign sorted_tags = site.tags | sort %}
-    {% if sorted_tags.size > 0 %}
-      <fieldset class="tag-filters">
-        <legend>Filtrer par tag</legend>
-        <div class="tag-filter-list">
-          {% for tag in sorted_tags %}
-            <button type="button" class="tag-filter" data-tag="{{ tag[0] | escape }}" aria-pressed="false">
-              {{ tag[0] }} <span>{{ tag[1].size }}</span>
+    <fieldset class="tag-filters">
+      <legend>Explorer par technologie ou sujet</legend>
+      <div class="tag-filter-list" aria-label="Filtres cumulables par technologie">
+        {% assign popular_tags = "Exchange|PowerShell|HPE|Cisco IronPort|SMTP|Sécurité|API" | split: "|" %}
+        {% for tag in popular_tags %}
+          {% if site.tags[tag].size > 0 %}
+            <button type="button" class="tag-filter" data-tag="{{ tag | escape }}" aria-pressed="false">
+              {{ tag }} <span>{{ site.tags[tag].size }}</span>
             </button>
-          {% endfor %}
-        </div>
-      </fieldset>
-    {% endif %}
+          {% endif %}
+        {% endfor %}
+      </div>
+    </fieldset>
 
-    <p class="search-status" data-search-status aria-live="polite"></p>
+    <fieldset class="tag-filters">
+      <legend>Type d'article</legend>
+      <div class="tag-filter-list" aria-label="Filtrer par type d'article">
+        <button type="button" class="tag-filter" data-type="comprendre" aria-pressed="false">Comprendre</button>
+        <button type="button" class="tag-filter" data-type="tutoriel" aria-pressed="false">Tutoriel</button>
+        <button type="button" class="tag-filter" data-type="script" aria-pressed="false">Script</button>
+      </div>
+    </fieldset>
   </div>
 </section>
 
-<section id="articles" aria-labelledby="derniers-articles">
+{% assign featured_post = site.posts | where: "featured", true | first %}
+{% unless featured_post %}{% assign featured_post = site.posts | first %}{% endunless %}
+{% if featured_post %}
+<section class="featured-section" aria-labelledby="article-une" data-featured-section>
   <div class="section-heading">
-    <h2 id="derniers-articles">Derniers articles</h2>
+    <h2 id="article-une">À la une</h2>
+  </div>
+  <article class="featured-card">
+    <div class="featured-card-top">
+      <span class="article-type">{{ featured_post.article_type | default: "tutoriel" | capitalize }}</span>
+      <time datetime="{{ featured_post.date | date_to_xmlschema }}">{{ featured_post.date | date: "%d/%m/%Y" }}</time>
+    </div>
+    <h3><a href="{{ featured_post.url | relative_url }}">{{ featured_post.title }}</a></h3>
+    {% if featured_post.description %}<p>{{ featured_post.description }}</p>{% endif %}
+    <div class="featured-card-bottom">
+      <ul class="tag-list" aria-label="Tags de l'article à la une">
+        {% for tag in featured_post.tags limit: 3 %}
+          <li><a class="tag" href="{{ '/' | relative_url }}?tag={{ tag | url_encode }}#recherche">{{ tag }}</a></li>
+        {% endfor %}
+      </ul>
+      <a class="read-more" href="{{ featured_post.url | relative_url }}">Lire le tutoriel →</a>
+    </div>
+  </article>
+</section>
+{% endif %}
+
+<section id="articles" aria-labelledby="derniers-articles">
+  <div class="section-heading article-heading">
+    <h2 id="derniers-articles" data-list-heading>Articles récents</h2>
+    <p class="search-status js-only" data-search-status aria-live="polite"></p>
   </div>
 
-  <div class="post-list" data-post-list>
+  <div class="post-list post-grid" data-post-list>
+    {% assign recent_shown = 0 %}
     {% for post in site.posts %}
-      <article class="post-card" data-post-card data-post-url="{{ post.url | relative_url }}">
-        <div>
-          <p class="post-card-meta">
-            <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%d/%m/%Y" }}</time>
-          </p>
-          <h3><a href="{{ post.url | relative_url }}">{{ post.title }}</a></h3>
-          {% if post.description %}<p>{{ post.description }}</p>{% endif %}
-          {% if post.tags %}
-            <ul class="tag-list post-card-tags" aria-label="Tags de l'article">
-              {% for tag in post.tags %}
-                <li><a class="tag" href="{{ '/' | relative_url }}?tag={{ tag | url_encode }}#recherche">{{ tag }}</a></li>
-              {% endfor %}
-            </ul>
-          {% endif %}
+      {% assign show_by_default = false %}
+      {% unless post.url == featured_post.url %}
+        {% if recent_shown < 6 %}
+          {% assign show_by_default = true %}
+          {% assign recent_shown = recent_shown | plus: 1 %}
+        {% endif %}
+      {% endunless %}
+      <article class="post-card" data-post-card data-post-url="{{ post.url | relative_url }}" data-post-type="{{ post.article_type | default: 'comprendre' }}" data-default-visible="{{ show_by_default }}">
+        <div class="post-card-top">
+          <span class="article-type">{{ post.article_type | default: "comprendre" | capitalize }}</span>
+          <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%d/%m/%Y" }}</time>
         </div>
-        <a class="read-more" href="{{ post.url | relative_url }}" aria-label="Lire {{ post.title | escape }}">Lire le tutoriel →</a>
+        <h3><a href="{{ post.url | relative_url }}">{{ post.title }}</a></h3>
+        {% if post.description %}<p class="post-card-description">{{ post.description }}</p>{% endif %}
+        {% if post.tags %}
+          <ul class="tag-list post-card-tags" aria-label="Tags de l'article">
+            {% for tag in post.tags limit: 3 %}
+              <li><a class="tag" href="{{ '/' | relative_url }}?tag={{ tag | url_encode }}#recherche">{{ tag }}</a></li>
+            {% endfor %}
+          </ul>
+        {% endif %}
       </article>
     {% else %}
       <p>Aucun article pour le moment.</p>
     {% endfor %}
   </div>
-  <p class="search-empty js-only" data-search-empty hidden>Aucun article ne correspond à cette recherche.</p>
+  <p class="search-empty js-only" data-search-empty hidden>Aucun article ne correspond à cette recherche. Essaie de retirer un filtre.</p>
+  <div class="browse-all" data-browse-all>
+    <a class="browse-all-link" href="{{ '/' | relative_url }}?all=1#articles">Voir tous les articles ({{ site.posts.size }}) →</a>
+  </div>
 </section>

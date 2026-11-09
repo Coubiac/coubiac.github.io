@@ -425,3 +425,103 @@ pre code { padding: 0; color: inherit; background: transparent; font-size: .88re
 @media (prefers-reduced-motion: reduce) {
   .post-grid .post-card { transition: none; }
 }
+
+
+/* Accueil épuré : recherche accessible sans bandeau ni panneau volumineux. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.layout-default .page-content { padding-block: 1.6rem 3rem; }
+.layout-default .article-browser { margin-bottom: 1.9rem; }
+.search-toolbar { display: flex; align-items: stretch; gap: .65rem; }
+.search-toolbar .search-field { flex: 1 1 auto; min-width: 0; }
+.search-toolbar .search-control { height: 100%; align-items: center; }
+.article-browser .search-control input {
+  min-height: 44px;
+  padding: .55rem .85rem;
+  border-radius: .6rem;
+  background: var(--surface);
+  font-size: .91rem;
+}
+.article-browser .search-clear { padding: .5rem .65rem; font-size: .8rem; }
+.advanced-toggle {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: .55rem .95rem;
+  border: 1px solid var(--border);
+  border-radius: .6rem;
+  color: var(--accent-dark);
+  background: var(--surface);
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.advanced-toggle:hover, .advanced-toggle[aria-expanded="true"], .advanced-toggle.has-active-filters {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.advanced-toggle:focus-visible, .article-browser .tag-filter:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.quick-filters { margin-top: .8rem; }
+.article-browser .tag-filter-list { gap: .4rem; }
+.article-browser .tag-filter {
+  padding: .26rem .65rem;
+  font-size: .78rem;
+  font-weight: 650;
+}
+.advanced-filter-panel {
+  display: grid;
+  gap: .95rem;
+  margin-top: .85rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: .7rem;
+  background: var(--surface);
+}
+.advanced-filter-panel .tag-filters legend { margin-bottom: .35rem; font-size: .78rem; }
+.featured-section { margin-bottom: 2rem; }
+.featured-section .section-heading { margin-bottom: 1rem; }
+.featured-card { padding: 1.35rem 1.6rem; }
+.featured-card h3 { margin: .65rem 0 .45rem; }
+.featured-card-bottom { margin-top: .85rem; }
+
+/* Titres d'articles : privilégier l'espace de lecture, même avec un titre long. */
+.layout-post .page-content { padding-top: 1.8rem; padding-bottom: 3rem; }
+.post-header { margin-bottom: 1.1rem; }
+.post-header h1 {
+  max-width: 900px;
+  margin-bottom: .55rem;
+  font-size: clamp(1.75rem, 3.1vw, 2.35rem);
+  line-height: 1.2;
+  letter-spacing: -.02em;
+  overflow-wrap: break-word;
+}
+.post-header .lead { font-size: 1rem; line-height: 1.55; }
+.post-header .post-meta { margin-top: .65rem; }
+.post-header .tag-list { margin-top: .65rem; }
+.layout-post .notice { margin: 1.2rem 0 1.8rem; padding: .8rem 1rem; font-size: .9rem; }
+
+@media (max-width: 680px) {
+  .layout-default .page-content { padding-top: 1.15rem; }
+  .search-toolbar { gap: .4rem; }
+  .search-toolbar .search-control { flex-direction: row; align-items: center; }
+  .article-browser .search-control input { padding-inline: .7rem; font-size: .85rem; }
+  .article-browser .search-clear { align-self: center; padding-inline: .45rem; }
+  .advanced-toggle { padding-inline: .7rem; font-size: .82rem; }
+  .advanced-filter-panel { padding: .85rem; }
+  .featured-card { padding: 1.15rem; }
+  .layout-post .page-content { padding-top: 1rem; }
+  .post-header h1 { font-size: clamp(1.55rem, 5.2vw, 1.85rem); line-height: 1.22; }
+  .post-header .lead { font-size: .94rem; }
+}

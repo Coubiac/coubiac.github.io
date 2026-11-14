@@ -80,7 +80,7 @@ Prenons le rôle intégré `Mail Recipients`.
 
 Il contient différentes opérations de gestion des destinataires Exchange. Un rôle n'est donc pas « le droit d'utiliser PowerShell » : il représente un ensemble de tâches prédéfini.
 
-Pour découvrir les rôles disponibles sur **ton organisation** :
+Pour découvrir les rôles disponibles dans l'organisation Exchange :
 
 ```powershell
 Get-ManagementRole | Sort-Object Name | Format-Table Name,Parent,IsEndUserRole

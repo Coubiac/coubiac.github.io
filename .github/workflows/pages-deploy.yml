@@ -1,0 +1,54 @@
+name: Déployer Chirpy sur GitHub Pages
+on:
+  push:
+    branches: [main]
+    paths-ignore: [README.md]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configurer Pages
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Configurer Ruby et Bundler
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Construire le site Chirpy
+        env:
+          JEKYLL_ENV: production
+        run: bundle exec jekyll build -d "_site${{ steps.pages.outputs.base_path }}"
+      - name: Vérifier le rendu
+        shell: bash
+        run: |
+          test -s "_site${{ steps.pages.outputs.base_path }}/index.html"
+          test -s "_site${{ steps.pages.outputs.base_path }}/articles/exchange-server-journaux-logs-diagnostic/index.html"
+          test -s "_site${{ steps.pages.outputs.base_path }}/assets/css/jekyll-theme-chirpy.css"
+          test -s "_site${{ steps.pages.outputs.base_path }}/a-propos/index.html"
+      - name: Préparer l'artefact Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "_site${{ steps.pages.outputs.base_path }}"
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Publier sur GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

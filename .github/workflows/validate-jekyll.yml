@@ -1,33 +1,23 @@
-name: Vérifier le site Jekyll
-
+name: Vérifier Chirpy
 on:
   pull_request:
     branches: [main]
-
 permissions:
   contents: read
-  pages: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Récupérer le dépôt
-        uses: actions/checkout@v4
-
-      - name: Configurer GitHub Pages
-        uses: actions/configure-pages@v5
-
-      - name: Compiler le site
-        uses: actions/jekyll-build-pages@v1
+      - uses: actions/checkout@v4
         with:
-          source: ./
-          destination: ./_site
-
-      - name: Vérifier les fichiers générés
-        shell: bash
+          fetch-depth: 0
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Compiler et vérifier Jekyll
         run: |
+          bundle exec jekyll build
           test -s _site/index.html
-          test -s _site/search.json
-          ruby -rjson -e 'd = JSON.parse(File.read("_site/search.json")); abort "Index vide" if d.empty?; abort "Type manquant" unless d.all? { |x| %w[comprendre tutoriel script].include?(x["type"]) }; puts "#{d.length} articles indexés"'
-          grep -q 'data-post-card' _site/index.html
+          test -s _site/articles/exchange-server-journaux-logs-diagnostic/index.html
+          test -s _site/assets/css/jekyll-theme-chirpy.css

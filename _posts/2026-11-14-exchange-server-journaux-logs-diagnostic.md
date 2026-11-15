@@ -506,7 +506,7 @@ sequenceDiagram
         Note over F,M: Message Tracking documente les étapes internes
     else Message rejeté pendant SMTP
         F-->>G: 5xx (rejet)
-        Note over G,F: Protocol Log essentiel ; pas de remise à suivre
+        Note over G,F: Le Protocol Log montre le rejet avant la remise
     end
 ```
 

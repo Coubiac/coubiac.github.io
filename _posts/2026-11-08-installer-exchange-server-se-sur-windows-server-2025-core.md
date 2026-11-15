@@ -1,4 +1,5 @@
 ---
+categories: [Exchange]
 layout: post
 article_type: tutoriel
 title: "Installer Exchange Server SE sur Windows Server 2025 Core : retour d'expérience"

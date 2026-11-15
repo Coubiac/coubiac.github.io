@@ -1,4 +1,5 @@
 ---
+categories: [Exchange]
 layout: post
 article_type: comprendre
 title: "Exchange Server : intégrer la messagerie après le rachat d'une entreprise"

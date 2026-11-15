@@ -1,4 +1,5 @@
 ---
+categories: [Exchange]
 layout: post
 article_type: comprendre
 title: "Exchange Server : comprendre RBAC, les rôles et les délégations d'administration"

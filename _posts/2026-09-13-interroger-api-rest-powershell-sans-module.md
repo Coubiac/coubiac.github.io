@@ -1,4 +1,5 @@
 ---
+categories: [PowerShell]
 layout: post
 article_type: tutoriel
 title: Interroger une API REST en PowerShell sans module

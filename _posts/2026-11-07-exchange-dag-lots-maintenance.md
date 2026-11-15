@@ -1,4 +1,5 @@
 ---
+categories: [Exchange]
 layout: post
 article_type: comprendre
 title: "Exchange DAG : quels serveurs peut-on mettre en maintenance simultanément ?"

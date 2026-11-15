@@ -1,4 +1,5 @@
 ---
+categories: [Exchange]
 layout: post
 title: "Exchange Server : comprendre Managed Availability, les Health Sets et le throttling"
 date: 2026-11-14

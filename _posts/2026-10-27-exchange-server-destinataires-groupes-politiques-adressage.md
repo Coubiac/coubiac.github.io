@@ -1,4 +1,5 @@
 ---
+categories: [Exchange]
 layout: post
 article_type: comprendre
 title: "Exchange Server : comprendre les destinataires, les groupes et les politiques d'adressage"

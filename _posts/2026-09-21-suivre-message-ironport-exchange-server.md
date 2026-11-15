@@ -1,4 +1,5 @@
 ---
+categories: [Messagerie]
 layout: post
 article_type: tutoriel
 title: "Suivre un message de bout en bout entre Cisco IronPort et Exchange Server"

@@ -1,4 +1,5 @@
 ---
+categories: [PowerShell]
 layout: post
 article_type: tutoriel
 title: "PowerShell : conserver et réutiliser des identifiants avec PSCredential et DPAPI"

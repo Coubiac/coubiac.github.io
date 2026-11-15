@@ -1,4 +1,5 @@
 ---
+categories: [HPE]
 layout: post
 article_type: script
 title: Inventorier les disques HPE avec PowerShell, OneView et Redfish

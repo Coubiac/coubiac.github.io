@@ -1,4 +1,5 @@
 ---
+categories: [Exchange]
 layout: post
 article_type: comprendre
 title: "Exchange Server : Circular Logging, sauvegardes, Preferred Architecture et ransomware"

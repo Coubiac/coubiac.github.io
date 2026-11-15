@@ -1,4 +1,5 @@
 ---
+categories: [Exchange]
 layout: post
 article_type: comprendre
 title: "Exchange Server : comprendre le transport SMTP, le routage et diagnostiquer les files d'attente"

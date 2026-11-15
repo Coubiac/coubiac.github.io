@@ -1,4 +1,5 @@
 ---
+categories: [Exchange]
 layout: post
 article_type: comprendre
 title: "Exchange Server : comprendre les accès clients, Autodiscover, MAPI/HTTP, OWA et ActiveSync"

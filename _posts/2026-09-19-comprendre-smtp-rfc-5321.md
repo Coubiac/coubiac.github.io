@@ -1,4 +1,5 @@
 ---
+categories: [Messagerie]
 layout: post
 article_type: comprendre
 title: "Comprendre SMTP : les bases de la RFC 5321"

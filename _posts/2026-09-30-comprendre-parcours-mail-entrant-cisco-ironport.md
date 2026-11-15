@@ -1,4 +1,5 @@
 ---
+categories: [Messagerie]
 layout: post
 article_type: comprendre
 title: "Cisco Secure Email (IronPort) : comprendre le parcours d'un mail entrant"

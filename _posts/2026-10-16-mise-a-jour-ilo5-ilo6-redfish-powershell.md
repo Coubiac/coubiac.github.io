@@ -1,4 +1,5 @@
 ---
+categories: [HPE]
 layout: post
 article_type: tutoriel
 title: "Mettre à jour les firmwares HPE iLO 5 et iLO 6 en PowerShell 5.1 avec Redfish"

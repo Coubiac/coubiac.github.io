@@ -1,4 +1,5 @@
 ---
+categories: [Exchange]
 layout: post
 article_type: tutoriel
 title: "Exchange Server : restaurer une boîte aux lettres, une base et un membre de DAG"
